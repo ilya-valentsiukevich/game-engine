@@ -1,0 +1,1 @@
+![Build](https://github.com/ilya-valentsiukevich/game-engine/actions/workflows/build.yml/badge.svg)
