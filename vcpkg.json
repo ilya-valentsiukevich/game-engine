@@ -5,6 +5,7 @@
     "fmt",
     "glm",
     "spdlog",
-    "entt"
+    "entt",
+    "sdl3"
   ]
 }
