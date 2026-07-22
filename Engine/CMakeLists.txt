@@ -1,5 +1,7 @@
 add_library(Engine STATIC
-        src/Application.cpp
+        src/Core/Application.cpp
+        src/Window/Window.cpp
+        src/Renderer/Renderer.cpp
 )
 
 target_include_directories(Engine
