@@ -2,6 +2,7 @@ add_library(Engine STATIC
         src/Core/Application.cpp
         src/Window/Window.cpp
         src/Renderer/Renderer.cpp
+        src/Assets/ShaderLoader/ShaderLoader.cpp
 )
 
 target_include_directories(Engine

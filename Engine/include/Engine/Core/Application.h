@@ -17,6 +17,8 @@ public:
 
 private:
     void PollEvents();
+    void Update();
+    void Render();
 
 private:
     bool m_running = true;

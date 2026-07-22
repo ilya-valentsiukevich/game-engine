@@ -22,9 +22,8 @@ bool Application::Initialize() {
 void Application::Run() {
     while (m_running) {
         PollEvents();
-
-        // Update();
-        // Render();
+        Update();
+        Render();
 
         SDL_Delay(1);
     }
@@ -49,5 +48,15 @@ void Application::PollEvents() {
             default:
                 break;
         }
+    }
+}
+
+void Application::Update() {
+}
+
+void Application::Render() {
+    if (m_renderer.BeginFrame()) {
+        m_renderer.Render();
+        m_renderer.EndFrame();
     }
 }

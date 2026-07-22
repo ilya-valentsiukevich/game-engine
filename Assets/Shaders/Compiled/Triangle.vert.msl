@@ -1,0 +1,24 @@
+#include <metal_stdlib>
+using namespace metal;
+
+struct VSInput
+{
+    float2 Position [[attribute(0)]];
+    float3 Color    [[attribute(1)]];
+};
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float3 Color;
+};
+
+vertex VSOutput main0(VSInput in [[stage_in]])
+{
+    VSOutput out;
+
+    out.Position = float4(in.Position, 0.0, 1.0);
+    out.Color = in.Color;
+
+    return out;
+}
