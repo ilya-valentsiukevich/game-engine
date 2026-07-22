@@ -1,12 +1,6 @@
-cmake_minimum_required(VERSION 4.3)
-project(game_engine)
+cmake_minimum_required(VERSION 3.25)
 
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+project(game_engine LANGUAGES CXX)
 
-find_package(fmt CONFIG REQUIRED)
-
-add_executable(game_engine src/main.cpp)
-
-target_link_libraries(game_engine PRIVATE fmt::fmt)
+add_subdirectory(Engine)
+add_subdirectory(Game)
