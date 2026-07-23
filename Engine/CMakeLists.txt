@@ -1,6 +1,7 @@
 add_library(Engine STATIC
         src/Core/Application.cpp
         src/Core/SDLContext.cpp
+        src/Core/Input.cpp
         src/Window/Window.cpp
         src/Renderer/Renderer.cpp
         src/Renderer/GPUDevice.cpp
