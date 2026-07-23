@@ -6,6 +6,7 @@ add_library(Engine STATIC
         src/Renderer/GPUDevice.cpp
         src/Renderer/Shader.cpp
         src/Renderer/Pipeline.cpp
+        src/Renderer/Mesh.cpp
         src/Assets/ShaderLoader/ShaderLoader.cpp
 )
 
