@@ -5,6 +5,7 @@
 
 #include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Renderer/GPUResource.h>
+#include <Engine/Renderer/Light.h>
 #include <Engine/Scene/Scene.h>
 
 #include <SDL3/SDL.h>
@@ -38,7 +39,7 @@ namespace Engine {
 
     private:
         // Recursively draws node and every descendant that has an
-        // AttachedModel, pushing mvp = viewProjection * node.GetWorldMatrix()
+        // AttachedModel, pushing the node's MVP and world (model) matrices
         // as the vertex uniform before each Model::Draw.
         void DrawNode(const SceneNode &node, const glm::mat4 &viewProjection);
 
@@ -71,5 +72,8 @@ namespace Engine {
         SceneNode *m_platformNode = nullptr;
 
         float m_platformRotationAngle = 0.0f;
+
+        DirectionalLight m_light;
+        float m_lightAngle = 0.0f;
     };
 }

@@ -25,7 +25,7 @@ namespace Engine {
         vertexBufferDescription.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
         vertexBufferDescription.instance_step_rate = 0;
 
-        SDL_GPUVertexAttribute vertexAttributes[2]{};
+        SDL_GPUVertexAttribute vertexAttributes[3]{};
         vertexAttributes[0].location = 0;
         vertexAttributes[0].buffer_slot = 0;
         vertexAttributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
@@ -33,8 +33,13 @@ namespace Engine {
 
         vertexAttributes[1].location = 1;
         vertexAttributes[1].buffer_slot = 0;
-        vertexAttributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
-        vertexAttributes[1].offset = offsetof(Vertex, TexCoord);
+        vertexAttributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        vertexAttributes[1].offset = offsetof(Vertex, Normal);
+
+        vertexAttributes[2].location = 2;
+        vertexAttributes[2].buffer_slot = 0;
+        vertexAttributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+        vertexAttributes[2].offset = offsetof(Vertex, TexCoord);
 
         SDL_GPUGraphicsPipelineCreateInfo pipelineCreateInfo{};
         pipelineCreateInfo.vertex_shader = vertexShader.Get();
@@ -45,7 +50,7 @@ namespace Engine {
                 &vertexBufferDescription;
         pipelineCreateInfo.vertex_input_state.num_vertex_buffers = 1;
         pipelineCreateInfo.vertex_input_state.vertex_attributes = vertexAttributes;
-        pipelineCreateInfo.vertex_input_state.num_vertex_attributes = 2;
+        pipelineCreateInfo.vertex_input_state.num_vertex_attributes = 3;
 
         pipelineCreateInfo.target_info.color_target_descriptions =
                 &colorTargetDescription;

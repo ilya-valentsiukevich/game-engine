@@ -4,12 +4,38 @@ using namespace metal;
 struct PSInput
 {
     float4 Position [[position]];
+    float3 WorldPosition;
+    float3 WorldNormal;
     float2 TexCoord;
 };
 
+struct LightUniformBlock
+{
+    float4 Direction;    // xyz: unit vector the light travels along (light -> scene)
+    float4 Color;        // xyz: light color/intensity
+    float4 ViewPosition; // xyz: camera world position, for the specular half-vector
+    float4 Params;       // x: ambient strength, y: specular strength, z: shininess
+};
+
 fragment float4 main0(PSInput in [[stage_in]],
+                       constant LightUniformBlock &light [[buffer(0)]],
                        texture2d<float> diffuseTexture [[texture(0)]],
                        sampler diffuseSampler [[sampler(0)]])
 {
-    return diffuseTexture.sample(diffuseSampler, in.TexCoord);
+    float3 normal = normalize(in.WorldNormal);
+    float3 lightDir = normalize(-light.Direction.xyz);
+    float3 viewDir = normalize(light.ViewPosition.xyz - in.WorldPosition);
+    float3 halfDir = normalize(lightDir + viewDir);
+
+    float diffuseFactor = max(dot(normal, lightDir), 0.0);
+    float specularFactor = pow(max(dot(normal, halfDir), 0.0), light.Params.z);
+
+    float3 ambient = light.Params.x * light.Color.xyz;
+    float3 diffuse = diffuseFactor * light.Color.xyz;
+    float3 specular = light.Params.y * specularFactor * light.Color.xyz;
+
+    float4 baseColor = diffuseTexture.sample(diffuseSampler, in.TexCoord);
+    float3 litColor = (ambient + diffuse) * baseColor.rgb + specular;
+
+    return float4(litColor, baseColor.a);
 }

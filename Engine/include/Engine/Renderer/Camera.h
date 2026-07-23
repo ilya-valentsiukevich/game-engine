@@ -18,6 +18,8 @@ namespace Engine {
         glm::mat4 GetViewMatrix() const;
         glm::mat4 GetProjectionMatrix(float aspectRatio) const;
 
+        const glm::vec3 &GetPosition() const { return m_position; }
+
     private:
         glm::vec3 GetForward() const;
 

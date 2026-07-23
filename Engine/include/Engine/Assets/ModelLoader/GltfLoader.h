@@ -11,7 +11,8 @@
 
 namespace Engine {
     // One glTF primitive: one material, one triangle list, already
-    // converted into this engine's own Vertex layout and Uint16 indices.
+    // converted into this engine's own Vertex layout (position, normal,
+    // UV) and Uint16 indices.
     struct GltfPrimitive {
         std::vector<Vertex> vertices;
         std::vector<Uint16> indices;

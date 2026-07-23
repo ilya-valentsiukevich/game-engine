@@ -4,18 +4,22 @@ using namespace metal;
 struct VSInput
 {
     float3 Position [[attribute(0)]];
-    float2 TexCoord [[attribute(1)]];
+    float3 Normal   [[attribute(1)]];
+    float2 TexCoord [[attribute(2)]];
 };
 
 struct VSOutput
 {
     float4 Position [[position]];
+    float3 WorldPosition;
+    float3 WorldNormal;
     float2 TexCoord;
 };
 
 struct UniformBlock
 {
     float4x4 MVP;
+    float4x4 Model;
 };
 
 vertex VSOutput main0(VSInput in [[stage_in]],
@@ -24,6 +28,12 @@ vertex VSOutput main0(VSInput in [[stage_in]],
     VSOutput out;
 
     out.Position = uniforms.MVP * float4(in.Position, 1.0);
+    out.WorldPosition = (uniforms.Model * float4(in.Position, 1.0)).xyz;
+
+    // w = 0 drops translation, leaving only rotation/scale — correct as
+    // long as Model applies no non-uniform scale.
+    out.WorldNormal = normalize((uniforms.Model * float4(in.Normal, 0.0)).xyz);
+
     out.TexCoord = in.TexCoord;
 
     return out;
