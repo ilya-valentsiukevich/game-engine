@@ -8,6 +8,7 @@ add_library(Engine STATIC
         src/Renderer/Shader.cpp
         src/Renderer/Pipeline.cpp
         src/Renderer/Mesh.cpp
+        src/Renderer/Camera.cpp
         src/Assets/ShaderLoader/ShaderLoader.cpp
 )
 
