@@ -16,11 +16,13 @@ target_include_directories(Engine
 
 find_package(SDL3 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
+find_package(glm CONFIG REQUIRED)
 
 target_link_libraries(Engine
         PUBLIC
         SDL3::SDL3
         fmt::fmt
+        glm::glm
 )
 
 target_compile_features(Engine PUBLIC cxx_std_23)
