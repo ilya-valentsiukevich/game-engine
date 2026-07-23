@@ -1,0 +1,10 @@
+#include <metal_stdlib>
+using namespace metal;
+
+// Intentionally empty: this pipeline has zero color targets, only depth
+// gets written, by the rasterizer's fixed-function depth test/write — not
+// by this function. SDL_gpu still requires a valid fragment shader object
+// per pipeline, so this stub exists to satisfy that.
+fragment void main0()
+{
+}

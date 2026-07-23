@@ -14,6 +14,7 @@ add_library(Engine STATIC
         src/Renderer/Sampler.cpp
         src/Renderer/Material.cpp
         src/Renderer/Model.cpp
+        src/Renderer/ShadowMap.cpp
         src/ECS/Transform.cpp
         src/ECS/Systems.cpp
         src/Scene/Scene.cpp

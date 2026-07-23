@@ -30,6 +30,11 @@ namespace Engine {
 
         void Draw(SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass *renderPass) const;
 
+        // Draws every part's geometry only, skipping material/texture
+        // binding — for depth-only passes, where the bound pipeline has no
+        // fragment-stage resources to bind them to anyway.
+        void DrawDepthOnly(SDL_GPURenderPass *renderPass) const;
+
     private:
         // ~Model() must be defined in Model.cpp (not defaulted here): it
         // implicitly destroys every MeshPart's unique_ptr<Mesh>/<Material>,

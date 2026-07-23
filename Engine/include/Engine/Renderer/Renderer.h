@@ -16,8 +16,10 @@ namespace Engine {
     class Window;
     class Pipeline;
     class Sampler;
+    class ShadowMap;
     class DebugUI;
     class Scene;
+    struct DirectionalLight;
 
     class Renderer {
     public:
@@ -53,18 +55,23 @@ namespace Engine {
 
     private:
         static constexpr SDL_GPUTextureFormat kDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+        static constexpr Uint32 kShadowMapSize = 2048;
 
         void CreateDepthTexture(Uint32 width, Uint32 height);
 
-        // Render() split into named phases so a shadow pass (before
-        // MainPass) and a post-processing pass (between MainPass and
-        // UIPass) each have an obvious, local place to go later instead of
-        // growing inside one monolithic function — see docs/tasks.md #11.
+        // Render() split into named phases: ShadowPass renders the scene's
+        // depth from the light's point of view first, then MainPass draws
+        // the visible frame reading that shadow map, then UIPass composites
+        // the debug UI on top.
 
-        // Draws every (Transform, MeshRenderer) entity into the main color
-        // + depth targets (already open from BeginFrame) and ends that
-        // render pass.
-        void MainPass(Scene &scene);
+        // Draws every (Transform, MeshRenderer) entity's geometry into the
+        // shadow map from the light's point of view.
+        void ShadowPass(Scene &scene, const glm::mat4 &lightSpaceMatrix);
+
+        // Opens the main color + depth render pass, draws every (Transform,
+        // MeshRenderer) entity into it reading the shadow map ShadowPass
+        // just filled, and ends that render pass.
+        void MainPass(Scene &scene, const glm::mat4 &lightSpaceMatrix);
 
         // Builds this frame's DebugUI content and composites it over the
         // swapchain in its own render pass (LOAD, not CLEAR, so it draws on
@@ -86,6 +93,8 @@ namespace Engine {
 
         std::unique_ptr<Pipeline> m_pipeline;
         std::unique_ptr<Sampler> m_sampler;
+        std::unique_ptr<ShadowMap> m_shadowMap;
+        std::unique_ptr<Pipeline> m_shadowPipeline;
         std::unique_ptr<DebugUI> m_debugUI;
     };
 }
