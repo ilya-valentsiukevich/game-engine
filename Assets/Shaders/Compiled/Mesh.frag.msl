@@ -30,10 +30,11 @@ struct SpotLightData
 
 struct LightUniformBlock
 {
-    float4 SunDirection; // xyz: unit vector the sun travels along, w: unused
-    float4 SunColor;     // xyz: sun color, w: unused
-    float4 ViewPosition; // xyz: camera world position, w: unused
-    float4 SunParams;    // x: ambient strength, y: point light count, z: spot light count, w: unused
+    float4 SunDirection;      // xyz: unit vector the sun travels along, w: unused
+    float4 SunColor;          // xyz: sun color, w: unused
+    float4 ViewPosition;      // xyz: camera world position, w: unused
+    float4 SunParams;         // x: ambient strength, y: point light count, z: spot light count, w: unused
+    float4x4 LightSpaceMatrix; // world space -> the sun's clip space, for shadow sampling
     PointLightData PointLights[kMaxPointLights];
     SpotLightData SpotLights[kMaxSpotLights];
 };
@@ -67,11 +68,52 @@ float Attenuate(float distance, float4 attenuation)
     return 1.0 / (attenuation.x + attenuation.y * distance + attenuation.z * distance * distance);
 }
 
+// Fraction of the light not blocked by other geometry, in [0, 1] — 1 means
+// fully lit, 0 means fully shadowed. 3x3 PCF: each of the 9 taps is itself
+// hardware-filtered across a 2x2 neighborhood by the comparison sampler
+// (see ShadowMap), so this already averages roughly a 4x4 texel footprint.
+float ShadowFactor(float3 worldPosition, float4x4 lightSpaceMatrix,
+                    depth2d<float> shadowMap, sampler shadowSampler)
+{
+    float4 fragPosLightSpace = lightSpaceMatrix * float4(worldPosition, 1.0);
+    float3 ndc = fragPosLightSpace.xyz / fragPosLightSpace.w;
+
+    // Metal texture space has (0,0) at the top-left with y growing
+    // downward; clip-space NDC has y growing upward — flip y converting
+    // between the two, same rule as any other clip-to-texture-space step.
+    float2 shadowUV = float2(ndc.x * 0.5 + 0.5, 1.0 - (ndc.y * 0.5 + 0.5));
+    float currentDepth = ndc.z;
+
+    // Outside the light's own frustum (beyond its far plane, or off the
+    // edge of its ortho bounds) there's no shadow-map data for this
+    // fragment at all — treat it as unshadowed instead of reading garbage
+    // or a clamped edge texel.
+    if (currentDepth > 1.0 || any(shadowUV < 0.0) || any(shadowUV > 1.0))
+        return 1.0;
+
+    constexpr float kBias = 0.0015;
+    float2 texelSize = 1.0 / float2(shadowMap.get_width(), shadowMap.get_height());
+
+    float lit = 0.0;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            float2 offset = float2(x, y) * texelSize;
+            lit += shadowMap.sample_compare(shadowSampler, shadowUV + offset, currentDepth - kBias);
+        }
+    }
+
+    return lit / 9.0;
+}
+
 fragment float4 main0(PSInput in [[stage_in]],
                        constant LightUniformBlock &light [[buffer(0)]],
                        constant MaterialUniformBlock &material [[buffer(1)]],
                        texture2d<float> diffuseTexture [[texture(0)]],
-                       sampler diffuseSampler [[sampler(0)]])
+                       sampler diffuseSampler [[sampler(0)]],
+                       depth2d<float> shadowMap [[texture(1)]],
+                       sampler shadowSampler [[sampler(1)]])
 {
     float3 normal = normalize(in.WorldNormal);
     float3 viewDir = normalize(light.ViewPosition.xyz - in.WorldPosition);
@@ -82,9 +124,11 @@ fragment float4 main0(PSInput in [[stage_in]],
 
     float3 ambient = light.SunParams.x * light.SunColor.xyz * baseColor.rgb;
 
+    float shadowFactor = ShadowFactor(in.WorldPosition, light.LightSpaceMatrix, shadowMap, shadowSampler);
+
     float3 sunLightDir = normalize(-light.SunDirection.xyz);
-    float3 result = ambient + ShadeLight(normal, viewDir, sunLightDir, light.SunColor.xyz,
-                                          1.0, baseColor.rgb, specularStrength, shininess);
+    float3 result = ambient + shadowFactor * ShadeLight(normal, viewDir, sunLightDir, light.SunColor.xyz,
+                                                          1.0, baseColor.rgb, specularStrength, shininess);
 
     uint pointLightCount = min(uint(light.SunParams.y), kMaxPointLights);
     for (uint i = 0; i < pointLightCount; ++i)
