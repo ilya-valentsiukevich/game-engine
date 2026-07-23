@@ -18,11 +18,17 @@ namespace Engine {
         AssetHandle<Texture> LoadBaseColorTexture(
             SDL_GPUDevice *device, const GltfPrimitive &primitive,
             AssetCache<Texture> &textureCache) {
+            // Base color is the texture the fragment shader multiplies
+            // directly into the lit color (see Mesh.frag.msl) — it's color
+            // data, so it needs an _SRGB format for the hardware to decode
+            // it to linear on sample.
+            constexpr SDL_GPUTextureFormat kBaseColorFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+
             if (!primitive.baseColorTexturePath.empty()) {
                 return textureCache.Load(
                     primitive.baseColorTexturePath,
-                    [device, path = primitive.baseColorTexturePath] {
-                        return std::make_shared<Texture>(device, path);
+                    [device, path = primitive.baseColorTexturePath, kBaseColorFormat] {
+                        return std::make_shared<Texture>(device, path, kBaseColorFormat);
                     },
                     [device](Texture &texture, const std::filesystem::path &path) {
                         texture.Reload(device, path);
@@ -33,7 +39,7 @@ namespace Engine {
                 // No stable file path to key a cache entry (or a hot-reload)
                 // on — embedded data gets its own uncached Texture.
                 return std::make_shared<Texture>(
-                    device, std::span(primitive.baseColorTextureData));
+                    device, std::span(primitive.baseColorTextureData), kBaseColorFormat);
             }
 
             return nullptr;

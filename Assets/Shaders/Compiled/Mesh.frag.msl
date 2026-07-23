@@ -37,5 +37,11 @@ fragment float4 main0(PSInput in [[stage_in]],
     float4 baseColor = diffuseTexture.sample(diffuseSampler, in.TexCoord);
     float3 litColor = (ambient + diffuse) * baseColor.rgb + specular;
 
-    return float4(litColor, baseColor.a);
+    // Lighting above is computed in linear space; the swapchain expects
+    // gamma-encoded output, so encode once here at the very end. Will be
+    // replaced by proper tone mapping in M15 — this is the same spot in
+    // the pipeline.
+    float3 gammaCorrected = pow(litColor, float3(1.0 / 2.2));
+
+    return float4(gammaCorrected, baseColor.a);
 }

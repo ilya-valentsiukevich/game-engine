@@ -12,11 +12,14 @@
 #include <stdexcept>
 
 namespace Engine {
-    Texture::Texture(SDL_GPUDevice *device, const std::filesystem::path &path) {
+    Texture::Texture(SDL_GPUDevice *device, const std::filesystem::path &path, SDL_GPUTextureFormat format)
+        : m_format(format) {
         Reload(device, path);
     }
 
-    Texture::Texture(SDL_GPUDevice *device, std::span<const unsigned char> encodedImageData) {
+    Texture::Texture(SDL_GPUDevice *device, std::span<const unsigned char> encodedImageData,
+                      SDL_GPUTextureFormat format)
+        : m_format(format) {
         int width = 0;
         int height = 0;
         int sourceChannels = 0;
@@ -59,7 +62,7 @@ namespace Engine {
 
         SDL_GPUTextureCreateInfo textureCreateInfo{};
         textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-        textureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        textureCreateInfo.format = m_format;
         textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
         textureCreateInfo.width = static_cast<Uint32>(width);
         textureCreateInfo.height = static_cast<Uint32>(height);
