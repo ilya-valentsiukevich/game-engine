@@ -13,8 +13,11 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
+#include <cmath>
 #include <format>
+#include <iterator>
 
 namespace Engine {
     Renderer::Renderer(Window &window)
@@ -81,8 +84,50 @@ namespace Engine {
             SDL_GPU_FILTER_LINEAR,
             SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
 
-        m_model = std::make_unique<Model>(
-            m_device->Get(), "Assets/Models/Knight/Knight.glb", *m_sampler);
+        struct DioramaCharacter {
+            const char *name;
+            const char *modelPath;
+        };
+
+        constexpr DioramaCharacter kDioramaCharacters[] = {
+            {"Knight", "Assets/Models/Knight/Knight.glb"},
+            {"Barbarian", "Assets/Models/Barbarian/Barbarian.glb"},
+            {"Mage", "Assets/Models/Mage/Mage.glb"},
+            {"Ranger", "Assets/Models/Ranger/Ranger.glb"},
+            {"Rogue", "Assets/Models/Rogue/Rogue_Hooded.glb"},
+        };
+        constexpr int kCharacterCount =
+                static_cast<int>(std::size(kDioramaCharacters));
+
+        // Diorama: a "Platform" node that one instance of each character is
+        // parented to. Rotating just the platform's local transform in
+        // Update() rotates all of them together.
+        SceneNode &platform =
+                m_scene.GetRoot().AddChild(std::make_unique<SceneNode>("Platform"));
+        m_platformNode = &platform;
+
+        constexpr float kRadius = 3.0f;
+
+        m_models.reserve(kCharacterCount);
+
+        for (int i = 0; i < kCharacterCount; ++i) {
+            const DioramaCharacter &character = kDioramaCharacters[i];
+
+            m_models.push_back(std::make_unique<Model>(
+                m_device->Get(), character.modelPath, *m_sampler));
+
+            const float angle =
+                    glm::radians(360.0f / static_cast<float>(kCharacterCount) * static_cast<float>(i));
+
+            auto node = std::make_unique<SceneNode>(character.name);
+            node->GetLocalTransform().Position =
+                    glm::vec3(std::cos(angle) * kRadius, 0.0f, std::sin(angle) * kRadius);
+            node->GetLocalTransform().Rotation =
+                    glm::angleAxis(-angle, glm::vec3(0.0f, 1.0f, 0.0f));
+            node->AttachedModel = m_models.back().get();
+
+            platform.AddChild(std::move(node));
+        }
     }
 
     bool Renderer::BeginFrame() {
@@ -166,7 +211,7 @@ namespace Engine {
         if (!m_device)
             return;
 
-        // m_depthTexture/m_pipeline/m_sampler/m_model release themselves via
+        // m_depthTexture/m_pipeline/m_sampler/m_models release themselves via
         // their own destructors (declared after m_device, so they run first).
         // m_device itself is destroyed last.
         SDL_ReleaseWindowFromGPUDevice(
@@ -175,8 +220,15 @@ namespace Engine {
     }
 
     void Renderer::Update(float deltaTime) {
-        constexpr float kRotationSpeed = glm::radians(90.0f); // rad/sec
-        m_rotationAngle += kRotationSpeed * deltaTime;
+        constexpr float kRotationSpeed = glm::radians(30.0f); // rad/sec
+        m_platformRotationAngle += kRotationSpeed * deltaTime;
+
+        if (m_platformNode) {
+            m_platformNode->GetLocalTransform().Rotation =
+                    glm::angleAxis(m_platformRotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+        }
+
+        m_scene.Update();
     }
 
     void Renderer::Render(const Camera &camera) {
@@ -193,15 +245,20 @@ namespace Engine {
 
         const glm::mat4 view = camera.GetViewMatrix();
         const glm::mat4 projection = camera.GetProjectionMatrix(aspectRatio);
+        const glm::mat4 viewProjection = projection * view;
 
-        const glm::mat4 model =
-                glm::translate(glm::mat4(1.0f), m_modelPosition) *
-                glm::rotate(glm::mat4(1.0f), m_rotationAngle, glm::vec3(0.5f, 1.0f, 0.0f));
+        DrawNode(m_scene.GetRoot(), viewProjection);
+    }
 
-        const glm::mat4 mvp = projection * view * model;
+    void Renderer::DrawNode(const SceneNode &node, const glm::mat4 &viewProjection) {
+        if (node.AttachedModel) {
+            const glm::mat4 mvp = viewProjection * node.GetWorldMatrix();
+            SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
+            node.AttachedModel->Draw(m_renderPass);
+        }
 
-        SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
-
-        m_model->Draw(m_renderPass);
+        for (const std::unique_ptr<SceneNode> &child : node.GetChildren()) {
+            DrawNode(*child, viewProjection);
+        }
     }
 }

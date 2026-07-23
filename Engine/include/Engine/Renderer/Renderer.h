@@ -5,10 +5,12 @@
 
 #include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Renderer/GPUResource.h>
+#include <Engine/Scene/Scene.h>
 
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 #include <memory>
+#include <vector>
 
 namespace Engine {
     class GPUDevice;
@@ -35,6 +37,11 @@ namespace Engine {
         void Render(const Camera &camera);
 
     private:
+        // Recursively draws node and every descendant that has an
+        // AttachedModel, pushing mvp = viewProjection * node.GetWorldMatrix()
+        // as the vertex uniform before each Model::Draw.
+        void DrawNode(const SceneNode &node, const glm::mat4 &viewProjection);
+
         Window *m_window = nullptr;
 
         // Declaration order matters: members below are destroyed before
@@ -50,9 +57,19 @@ namespace Engine {
 
         std::unique_ptr<Pipeline> m_pipeline;
         std::unique_ptr<Sampler> m_sampler;
-        std::unique_ptr<Model> m_model;
 
-        float m_rotationAngle = 0.0f;
-        glm::vec3 m_modelPosition{0.0f, 0.0f, 0.0f};
+        // One entry per diorama character (see constructor) — a vector of
+        // unique_ptr rather than a vector of Model keeps every Model's
+        // address stable across reallocation, which SceneNode::AttachedModel
+        // pointers below depend on.
+        std::vector<std::unique_ptr<Model>> m_models;
+
+        Scene m_scene;
+        // Non-owning — points at a node owned by m_scene's tree, kept
+        // around only so Update() can spin it without walking the tree by
+        // name every frame.
+        SceneNode *m_platformNode = nullptr;
+
+        float m_platformRotationAngle = 0.0f;
     };
 }

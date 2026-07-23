@@ -13,6 +13,9 @@ add_library(Engine STATIC
         src/Renderer/Sampler.cpp
         src/Renderer/Material.cpp
         src/Renderer/Model.cpp
+        src/Scene/Transform.cpp
+        src/Scene/SceneNode.cpp
+        src/Scene/Scene.cpp
         src/Assets/ShaderLoader/ShaderLoader.cpp
         src/Assets/ModelLoader/GltfLoader.cpp
 )
