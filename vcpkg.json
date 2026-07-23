@@ -8,6 +8,13 @@
     "entt",
     "sdl3",
     "stb",
-    "cgltf"
+    "cgltf",
+    {
+      "name": "imgui",
+      "features": [
+        "sdl3-binding",
+        "sdlgpu3-binding"
+      ]
+    }
   ]
 }
