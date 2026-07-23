@@ -9,6 +9,8 @@ add_library(Engine STATIC
         src/Renderer/Pipeline.cpp
         src/Renderer/Mesh.cpp
         src/Renderer/Camera.cpp
+        src/Renderer/Texture.cpp
+        src/Renderer/Sampler.cpp
         src/Assets/ShaderLoader/ShaderLoader.cpp
 )
 
@@ -20,6 +22,12 @@ target_include_directories(Engine
 find_package(SDL3 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(Stb REQUIRED)
+
+target_include_directories(Engine
+        PRIVATE
+        ${Stb_INCLUDE_DIR}
+)
 
 target_link_libraries(Engine
         PUBLIC

@@ -83,7 +83,7 @@ namespace Engine {
             m_device->Get(), std::span(kCubeVertices), std::span(kCubeIndices));
 
         m_texture = std::make_unique<Texture>(
-            m_device->Get(), "Assets/Textures/crate.png");
+            m_device->Get(), "Assets/Textures/crate.jpg");
 
         m_sampler = std::make_unique<Sampler>(
             m_device->Get(),
