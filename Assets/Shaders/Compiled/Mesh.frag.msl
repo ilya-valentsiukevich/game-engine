@@ -34,7 +34,13 @@ struct LightUniformBlock
     float4 SunDirection;       // xyz: unit vector the sun travels along, w: unused
     float4 SunColor;           // xyz: sun color, w: unused
     float4 ViewPosition;       // xyz: camera world position, w: unused
-    float4 SunParams;          // x: ambient strength, y: point light count, z: spot light count, w: unused
+    float4 SunParams;          // x: ambient strength (only used when IBLParams.w disables IBL), y: point light count, z: spot light count, w: unused
+    // IBL debug knobs, live-edited via DebugUI's "IBL" window (IBLSettings)
+    // instead of baked into the shader — x: floor applied to roughness only
+    // for the ambient specular lookup, y: mip bias for the prefiltered
+    // specular sample (must track EnvironmentMap::kPrefilterMipLevels - 1),
+    // z: flat multiplier on the whole ambient term, w: unused.
+    float4 IBLParams;
     float4x4 LightSpaceMatrix; // world space -> the sun's clip space, for shadow sampling
     PointLightData PointLights[kMaxPointLights];
     SpotLightData SpotLights[kMaxSpotLights];
@@ -92,6 +98,19 @@ float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
 float3 FresnelSchlick(float cosTheta, float3 F0)
 {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// Fresnel-Schlick with a roughness-clamped grazing-angle ceiling (Lagarde):
+// plain FresnelSchlick always ramps to 1.0 at grazing angles, which is only
+// correct for a perfectly smooth surface — used for direct lighting, where
+// H is always exactly at the specular peak. IBL's ambient term instead
+// integrates over the whole prefiltered/irradiance hemisphere, so a rough
+// surface's grazing-angle reflectance should ceiling below 1.0 too, or
+// ambient specular over-brightens at silhouette edges.
+float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
+{
+    float3 ceiling = max(float3(1.0 - roughness), F0);
+    return F0 + (ceiling - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
 // Cook-Torrance direct lighting contribution of one already-attenuated
@@ -172,7 +191,13 @@ fragment float4 main0(PSInput in [[stage_in]],
                        texture2d<float> metallicRoughnessTexture [[texture(1)]],
                        sampler metallicRoughnessSampler [[sampler(1)]],
                        depth2d<float> shadowMap [[texture(2)]],
-                       sampler shadowSampler [[sampler(2)]])
+                       sampler shadowSampler [[sampler(2)]],
+                       texturecube<float> irradianceMap [[texture(3)]],
+                       sampler irradianceSampler [[sampler(3)]],
+                       texturecube<float> prefilteredMap [[texture(4)]],
+                       sampler prefilteredSampler [[sampler(4)]],
+                       texture2d<float> brdfLutTexture [[texture(5)]],
+                       sampler brdfLutSampler [[sampler(5)]])
 {
     float3 N = normalize(in.WorldNormal);
     float3 V = normalize(light.ViewPosition.xyz - in.WorldPosition);
@@ -192,7 +217,55 @@ fragment float4 main0(PSInput in [[stage_in]],
     // their own base color instead of having a separate diffuse albedo.
     float3 F0 = mix(float3(0.04), albedo, metallic);
 
-    float3 ambient = light.SunParams.x * light.SunColor.xyz * albedo;
+    float NdotV = max(dot(N, V), 0.0);
+
+    // light.IBLParams.w is IBLSettings::Enabled (0.0/1.0), toggled live via
+    // DebugUI's "IBL" window checkbox. Off falls back to the flat ambient
+    // this engine used before an environment existed to sample — same
+    // formula, same SunParams.x knob, still editable on DirectionalLight.
+    float3 ambient;
+    if (light.IBLParams.w > 0.5)
+    {
+        float3 kS = FresnelSchlickRoughness(NdotV, F0, roughness);
+        float3 kD = (1.0 - kS) * (1.0 - metallic);
+
+        float3 irradiance = irradianceMap.sample(irradianceSampler, N).rgb;
+        float3 diffuseAmbient = kD * irradiance * albedo;
+
+        // Floored separately from the real `roughness` used everywhere
+        // else: direct lighting's specular highlight (ShadePBR) is a
+        // single point sample of the light, so a low roughness there just
+        // makes a small, sharp highlight — correct and unremarkable.
+        // Ambient specular instead reflects the *entire* prefiltered sky
+        // dome across the whole visible surface, so any low-roughness spot
+        // in metallicRoughnessTexture's G channel (invisible before this
+        // milestone, since there was no environment to reflect) now shows
+        // up as a distinct patch of cloud detail — most noticeable on the
+        // low-poly character meshes, where each patch lines up with a
+        // handful of triangles. Flooring only the ambient lookup keeps
+        // that mirror-like clarity from making individual texture-
+        // roughness variation this visible, without touching direct
+        // light's highlights or embedding an ad hoc value in
+        // DistributionGGX. light.IBLParams.x/y are IBLSettings::
+        // MinAmbientRoughness/MaxReflectionLod.
+        float ambientRoughness = max(roughness, light.IBLParams.x);
+
+        float3 R = reflect(-V, N);
+        float3 prefilteredColor = prefilteredMap.sample(
+            prefilteredSampler, R, level(ambientRoughness * light.IBLParams.y)).rgb;
+        float2 envBRDF = brdfLutTexture.sample(brdfLutSampler, float2(NdotV, ambientRoughness)).rg;
+        float3 specularAmbient = prefilteredColor * (kS * envBRDF.x + envBRDF.y);
+
+        // light.IBLParams.z is IBLSettings::AmbientIntensity — a flat
+        // multiplier for quickly judging "is IBL too strong overall"
+        // against the two knobs above (which each isolate one specific
+        // term).
+        ambient = (diffuseAmbient + specularAmbient) * light.IBLParams.z;
+    }
+    else
+    {
+        ambient = light.SunParams.x * light.SunColor.xyz * albedo;
+    }
 
     float shadowFactor = ShadowFactor(in.WorldPosition, light.LightSpaceMatrix, shadowMap, shadowSampler);
 
@@ -229,8 +302,12 @@ fragment float4 main0(PSInput in [[stage_in]],
         result += ShadePBR(N, V, L, spotLight.Color.xyz, attenuation, albedo, metallic, roughness, F0);
     }
 
-    // Lighting above is computed in linear space; the swapchain expects
-    // gamma-encoded output, so encode once here at the very end.
+    // Reinhard tone mapping: IBL's specular ambient can push result well
+    // above 1.0 (a bright sky reflected off a smooth metal), which would
+    // otherwise clip to flat white. Lighting above is computed in linear
+    // space; the swapchain expects gamma-encoded output, so encode once
+    // here at the very end.
+    result = result / (result + float3(1.0));
     float3 gammaCorrected = pow(result, float3(1.0 / 2.2));
 
     return float4(gammaCorrected, baseColor.a);

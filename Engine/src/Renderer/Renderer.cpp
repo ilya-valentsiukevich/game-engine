@@ -10,6 +10,7 @@
 #include <Engine/Renderer/Light.h>
 #include <Engine/Renderer/Sampler.h>
 #include <Engine/Renderer/ShadowMap.h>
+#include <Engine/Renderer/EnvironmentMap.h>
 #include <Engine/Renderer/DebugUI.h>
 #include <Engine/Window/Window.h>
 #include <Engine/ECS/Components.h>
@@ -82,7 +83,8 @@ namespace Engine {
             "Assets/Shaders/Compiled/Mesh.frag.msl",
             SDL_GPU_SHADERSTAGE_FRAGMENT,
             2,  // numUniformBuffers: buffer(0) LightUniformBlock, buffer(1) MaterialUniformBlock
-            3); // numSamplers: sampler(0) base color, sampler(1) metallic-roughness, sampler(2) shadow map
+            6); // numSamplers: sampler(0) base color, (1) metallic-roughness, (2) shadow map,
+                // (3) irradiance, (4) prefiltered specular, (5) BRDF LUT
 
         const Shader shadowVertexShader(
             m_device->Get(),
@@ -119,6 +121,21 @@ namespace Engine {
         m_shadowMap = std::make_unique<ShadowMap>(m_device->Get(), kShadowMapSize);
         m_shadowPipeline = std::make_unique<Pipeline>(
             m_device->Get(), ShadowMap::kFormat, shadowVertexShader, shadowFragmentShader);
+
+        m_environmentMap = std::make_unique<EnvironmentMap>(
+            m_device->Get(), "Assets/Textures/Environment/environment.hdr");
+
+        const Shader skyboxVertexShader(
+            m_device->Get(), "Assets/Shaders/Compiled/Cube.vert.msl",
+            SDL_GPU_SHADERSTAGE_VERTEX, 1);
+        const Shader skyboxFragmentShader(
+            m_device->Get(), "Assets/Shaders/Compiled/Skybox.frag.msl",
+            SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
+
+        m_skyboxPipeline = std::make_unique<Pipeline>(
+            m_device->Get(), colorFormat, kDepthFormat, skyboxVertexShader, skyboxFragmentShader,
+            Pipeline::VertexLayout::PositionOnly, SDL_GPU_COMPAREOP_LESS_OR_EQUAL,
+            /* enableDepthWrite */ false);
 
         m_debugUI = std::make_unique<DebugUI>(*m_window, m_device->Get(), colorFormat);
     }
@@ -292,7 +309,8 @@ namespace Engine {
             glm::vec4 SunDirection;
             glm::vec4 SunColor;
             glm::vec4 ViewPosition;
-            glm::vec4 SunParams; // x: ambient, y: point light count, z: spot light count, w: unused
+            glm::vec4 SunParams; // x: ambient (only used when IBLParams.w disables IBL), y: point light count, z: spot light count, w: unused
+            glm::vec4 IBLParams; // x: min ambient roughness, y: max reflection LOD, z: ambient intensity, w: IBL enabled (0/1)
             glm::mat4 LightSpaceMatrix;
             PointLightData PointLights[kMaxPointLights];
             SpotLightData SpotLights[kMaxSpotLights];
@@ -302,6 +320,9 @@ namespace Engine {
         lightUniform.SunDirection = glm::vec4(light.Direction, 0.0f);
         lightUniform.SunColor = glm::vec4(light.Color, 0.0f);
         lightUniform.ViewPosition = glm::vec4(camera.GetPosition(), 0.0f);
+        lightUniform.IBLParams = glm::vec4(
+            m_iblSettings.MinAmbientRoughness, m_iblSettings.MaxReflectionLod,
+            m_iblSettings.AmbientIntensity, m_iblSettings.Enabled ? 1.0f : 0.0f);
         lightUniform.LightSpaceMatrix = lightSpaceMatrix;
 
         int pointLightCount = 0;
@@ -344,14 +365,45 @@ namespace Engine {
         shadowBinding.sampler = m_shadowMap->GetSampler();
         SDL_BindGPUFragmentSamplers(m_renderPass, 2, &shadowBinding, 1);
 
+        SDL_GPUTextureSamplerBinding iblBindings[3]{};
+        iblBindings[0].texture = m_environmentMap->GetIrradianceTexture();
+        iblBindings[0].sampler = m_environmentMap->GetHdrSampler();
+        iblBindings[1].texture = m_environmentMap->GetPrefilteredTexture();
+        iblBindings[1].sampler = m_environmentMap->GetHdrSampler();
+        iblBindings[2].texture = m_environmentMap->GetBRDFLutTexture();
+        iblBindings[2].sampler = m_environmentMap->GetHdrSampler();
+        SDL_BindGPUFragmentSamplers(m_renderPass, 3, iblBindings, 3);
+
         RenderSystem(registry, m_commandBuffer, m_renderPass, viewProjection);
+
+        // Off: the color target's own clear_color above shows through as
+        // the background instead, same as before EnvironmentMap existed.
+        if (m_iblSettings.Enabled)
+            SkyboxPass(view, projection);
 
         SDL_EndGPURenderPass(m_renderPass);
         m_renderPass = nullptr;
     }
 
+    void Renderer::SkyboxPass(const glm::mat4 &view, const glm::mat4 &projection) {
+        // Drop translation (mat3 truncation) so the skybox always appears
+        // centered on the camera regardless of where it's moved.
+        const glm::mat4 skyboxViewProjection = projection * glm::mat4(glm::mat3(view));
+
+        SDL_BindGPUGraphicsPipeline(m_renderPass, m_skyboxPipeline->Get());
+
+        SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &skyboxViewProjection, sizeof(glm::mat4));
+
+        SDL_GPUTextureSamplerBinding skyboxBinding{};
+        skyboxBinding.texture = m_environmentMap->GetSkyboxTexture();
+        skyboxBinding.sampler = m_environmentMap->GetHdrSampler();
+        SDL_BindGPUFragmentSamplers(m_renderPass, 0, &skyboxBinding, 1);
+
+        m_environmentMap->DrawCube(m_renderPass);
+    }
+
     void Renderer::UIPass(Scene &scene, AppMode mode) {
-        m_debugUI->Draw(scene.Registry(), mode);
+        m_debugUI->Draw(scene.Registry(), mode, m_iblSettings);
         m_debugUI->FinalizeDrawData(m_commandBuffer);
 
         SDL_GPUColorTargetInfo uiColorTarget{};

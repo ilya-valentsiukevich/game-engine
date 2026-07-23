@@ -6,6 +6,7 @@
 #include <Engine/Core/AppMode.h>
 #include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Renderer/GPUResource.h>
+#include <Engine/Renderer/IBLSettings.h>
 
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
@@ -17,6 +18,7 @@ namespace Engine {
     class Pipeline;
     class Sampler;
     class ShadowMap;
+    class EnvironmentMap;
     class DebugUI;
     class Scene;
     struct DirectionalLight;
@@ -78,6 +80,13 @@ namespace Engine {
         // top of whatever MainPass already put there).
         void UIPass(Scene &scene, AppMode mode);
 
+        // Draws the environment cubemap as the scene's background, after
+        // MainPass's opaque geometry — the vertex shader pins every skybox
+        // fragment to the far plane, and the pipeline's depth compare op is
+        // LESS_OR_EQUAL with writes disabled, so this only ever paints
+        // pixels nothing else already covered this frame.
+        void SkyboxPass(const glm::mat4 &view, const glm::mat4 &projection);
+
         Window *m_window = nullptr;
 
         // Declaration order matters: members below are destroyed before
@@ -95,6 +104,9 @@ namespace Engine {
         std::unique_ptr<Sampler> m_sampler;
         std::unique_ptr<ShadowMap> m_shadowMap;
         std::unique_ptr<Pipeline> m_shadowPipeline;
+        std::unique_ptr<EnvironmentMap> m_environmentMap;
+        std::unique_ptr<Pipeline> m_skyboxPipeline;
+        IBLSettings m_iblSettings;
         std::unique_ptr<DebugUI> m_debugUI;
     };
 }

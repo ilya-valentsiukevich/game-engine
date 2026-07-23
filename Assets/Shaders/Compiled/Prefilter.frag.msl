@@ -1,0 +1,87 @@
+#include <metal_stdlib>
+using namespace metal;
+
+constant float kPi = 3.14159265359;
+constant uint kSampleCount = 1024u;
+
+float RadicalInverseVdC(uint bits)
+{
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10;
+}
+
+float2 Hammersley(uint i, uint n)
+{
+    return float2(float(i) / float(n), RadicalInverseVdC(i));
+}
+
+// GGX-importance-sampled half-vector around n — concentrates samples where
+// the specular highlight actually carries energy at this roughness, instead
+// of wasting samples on directions that barely contribute.
+float3 ImportanceSampleGGX(float2 xi, float3 n, float roughness)
+{
+    float a = roughness * roughness;
+
+    float phi = 2.0 * kPi * xi.x;
+    float cosTheta = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+    float3 h = float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+
+    float3 up = abs(n.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+    float3 tangent = normalize(cross(up, n));
+    float3 bitangent = cross(n, tangent);
+
+    return normalize(tangent * h.x + bitangent * h.y + n * h.z);
+}
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float3 WorldDirection;
+};
+
+struct UniformBlock
+{
+    float Roughness;
+};
+
+fragment float4 main0(VSOutput in [[stage_in]],
+                       constant UniformBlock &uniforms [[buffer(0)]],
+                       texturecube<float> environmentMap [[texture(0)]],
+                       sampler environmentSampler [[sampler(0)]])
+{
+    // Split-sum approximation (Karis, "Real Shading in Unreal Engine 4"):
+    // assumes N == V == R, valid as long as the viewer isn't near a grazing
+    // angle — the same simplification the reference implementation uses,
+    // trading a small amount of accuracy for a map that's precomputable
+    // at all.
+    float3 n = normalize(in.WorldDirection);
+    float3 r = n;
+    float3 v = r;
+
+    float totalWeight = 0.0;
+    float3 prefilteredColor = float3(0.0);
+
+    for (uint i = 0u; i < kSampleCount; ++i)
+    {
+        float2 xi = Hammersley(i, kSampleCount);
+        float3 h = ImportanceSampleGGX(xi, n, uniforms.Roughness);
+        float3 l = normalize(2.0 * dot(v, h) * h - v);
+
+        float NdotL = max(dot(n, l), 0.0);
+        if (NdotL > 0.0)
+        {
+            prefilteredColor += environmentMap.sample(environmentSampler, l).rgb * NdotL;
+            totalWeight += NdotL;
+        }
+    }
+
+    prefilteredColor /= max(totalWeight, 1e-4);
+
+    return float4(prefilteredColor, 1.0);
+}

@@ -30,6 +30,18 @@ namespace Engine {
 
         void Bind(SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass *renderPass) const;
 
+        // Mutable accessors for DebugUI's material inspector — Bind() reads
+        // these fresh every call, so an edit here takes effect on the very
+        // next draw, no separate wiring needed.
+        const glm::vec4 &GetBaseColorFactor() const { return m_baseColorFactor; }
+        void SetBaseColorFactor(const glm::vec4 &value) { m_baseColorFactor = value; }
+
+        float GetMetallicFactor() const { return m_metallicFactor; }
+        void SetMetallicFactor(float value) { m_metallicFactor = value; }
+
+        float GetRoughnessFactor() const { return m_roughnessFactor; }
+        void SetRoughnessFactor(float value) { m_roughnessFactor = value; }
+
     private:
         AssetHandle<Texture> m_baseColorTexture;
         glm::vec4 m_baseColorFactor;

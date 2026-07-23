@@ -1,0 +1,32 @@
+#include <metal_stdlib>
+using namespace metal;
+
+constant float2 kInvAtan = float2(0.1591549, 0.3183099); // 1/(2*pi), 1/pi
+
+float2 SampleSphericalMap(float3 direction)
+{
+    // atan2(z, x): longitude, wraps U around the full [0, 1] range.
+    // -asin(y): latitude. Negated because row 0 (V = 0) of a standard
+    // equirectangular panorama is the zenith (direction.y = +1) — without
+    // the negation, straight up would sample the image's bottom row
+    // (the nadir) instead.
+    float2 uv = float2(atan2(direction.z, direction.x), -asin(direction.y));
+    uv *= kInvAtan;
+    uv += 0.5;
+    return uv;
+}
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float3 WorldDirection;
+};
+
+fragment float4 main0(VSOutput in [[stage_in]],
+                       texture2d<float> equirectangularMap [[texture(0)]],
+                       sampler equirectangularSampler [[sampler(0)]])
+{
+    float2 uv = SampleSphericalMap(normalize(in.WorldDirection));
+    float3 color = equirectangularMap.sample(equirectangularSampler, uv).rgb;
+    return float4(color, 1.0);
+}
