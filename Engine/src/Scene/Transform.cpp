@@ -8,7 +8,9 @@ namespace Engine {
         const glm::mat4 rotation = glm::mat4_cast(Rotation);
         const glm::mat4 scale = glm::scale(glm::mat4(1.0f), Scale);
 
-        // T * R * S — see M6 §1.2 for why this order, not any other.
+        // Translate * Rotate * Scale: a point is scaled in local space,
+        // then rotated about the local origin, then moved into place —
+        // any other order mixes scale into the translation axes.
         return translation * rotation * scale;
     }
 }

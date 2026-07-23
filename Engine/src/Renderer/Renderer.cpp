@@ -17,6 +17,7 @@
 
 #include <cmath>
 #include <format>
+#include <iterator>
 
 namespace Engine {
     Renderer::Renderer(Window &window)
@@ -83,32 +84,49 @@ namespace Engine {
             SDL_GPU_FILTER_LINEAR,
             SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
 
-        m_model = std::make_unique<Model>(
-            m_device->Get(), "Assets/Models/Knight/Knight.glb", *m_sampler);
+        struct DioramaCharacter {
+            const char *name;
+            const char *modelPath;
+        };
 
-        // Diorama: a "Platform" node that a handful of Knight instances are
-        // parented to. Rotating just the platform's LocalTransform in
-        // Update() rotates all of them together — the whole point of a
-        // scene graph over a flat list (M6 §1.1).
+        constexpr DioramaCharacter kDioramaCharacters[] = {
+            {"Knight", "Assets/Models/Knight/Knight.glb"},
+            {"Barbarian", "Assets/Models/Barbarian/Barbarian.glb"},
+            {"Mage", "Assets/Models/Mage/Mage.glb"},
+            {"Ranger", "Assets/Models/Ranger/Ranger.glb"},
+            {"Rogue", "Assets/Models/Rogue/Rogue_Hooded.glb"},
+        };
+        constexpr int kCharacterCount =
+                static_cast<int>(std::size(kDioramaCharacters));
+
+        // Diorama: a "Platform" node that one instance of each character is
+        // parented to. Rotating just the platform's local transform in
+        // Update() rotates all of them together.
         SceneNode &platform =
                 m_scene.GetRoot().AddChild(std::make_unique<SceneNode>("Platform"));
         m_platformNode = &platform;
 
-        constexpr int kKnightCount = 4;
-        constexpr float kRadius = 2.5f;
+        constexpr float kRadius = 3.0f;
 
-        for (int i = 0; i < kKnightCount; ++i) {
+        m_models.reserve(kCharacterCount);
+
+        for (int i = 0; i < kCharacterCount; ++i) {
+            const DioramaCharacter &character = kDioramaCharacters[i];
+
+            m_models.push_back(std::make_unique<Model>(
+                m_device->Get(), character.modelPath, *m_sampler));
+
             const float angle =
-                    glm::radians(360.0f / static_cast<float>(kKnightCount) * static_cast<float>(i));
+                    glm::radians(360.0f / static_cast<float>(kCharacterCount) * static_cast<float>(i));
 
-            auto knight = std::make_unique<SceneNode>(std::format("Knight{}", i));
-            knight->LocalTransform.Position =
+            auto node = std::make_unique<SceneNode>(character.name);
+            node->GetLocalTransform().Position =
                     glm::vec3(std::cos(angle) * kRadius, 0.0f, std::sin(angle) * kRadius);
-            knight->LocalTransform.Rotation =
+            node->GetLocalTransform().Rotation =
                     glm::angleAxis(-angle, glm::vec3(0.0f, 1.0f, 0.0f));
-            knight->AttachedModel = m_model.get();
+            node->AttachedModel = m_models.back().get();
 
-            platform.AddChild(std::move(knight));
+            platform.AddChild(std::move(node));
         }
     }
 
@@ -193,7 +211,7 @@ namespace Engine {
         if (!m_device)
             return;
 
-        // m_depthTexture/m_pipeline/m_sampler/m_model release themselves via
+        // m_depthTexture/m_pipeline/m_sampler/m_models release themselves via
         // their own destructors (declared after m_device, so they run first).
         // m_device itself is destroyed last.
         SDL_ReleaseWindowFromGPUDevice(
@@ -206,7 +224,7 @@ namespace Engine {
         m_platformRotationAngle += kRotationSpeed * deltaTime;
 
         if (m_platformNode) {
-            m_platformNode->LocalTransform.Rotation =
+            m_platformNode->GetLocalTransform().Rotation =
                     glm::angleAxis(m_platformRotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
         }
 

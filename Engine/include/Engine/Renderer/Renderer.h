@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 #include <memory>
+#include <vector>
 
 namespace Engine {
     class GPUDevice;
@@ -38,7 +39,7 @@ namespace Engine {
     private:
         // Recursively draws node and every descendant that has an
         // AttachedModel, pushing mvp = viewProjection * node.GetWorldMatrix()
-        // as the vertex uniform before each Model::Draw (see M6 §1.4/§2).
+        // as the vertex uniform before each Model::Draw.
         void DrawNode(const SceneNode &node, const glm::mat4 &viewProjection);
 
         Window *m_window = nullptr;
@@ -56,7 +57,12 @@ namespace Engine {
 
         std::unique_ptr<Pipeline> m_pipeline;
         std::unique_ptr<Sampler> m_sampler;
-        std::unique_ptr<Model> m_model;
+
+        // One entry per diorama character (see constructor) — a vector of
+        // unique_ptr rather than a vector of Model keeps every Model's
+        // address stable across reallocation, which SceneNode::AttachedModel
+        // pointers below depend on.
+        std::vector<std::unique_ptr<Model>> m_models;
 
         Scene m_scene;
         // Non-owning — points at a node owned by m_scene's tree, kept
