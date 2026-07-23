@@ -77,6 +77,15 @@ namespace Engine {
         Buffer(const Buffer &) = delete;
         Buffer &operator=(const Buffer &) = delete;
 
+        // Declaring the deleted copy operations above suppresses the
+        // implicit move constructor/assignment too, so they're spelled out
+        // here — needed to return a Buffer<T> by value from a factory
+        // function (see Mesh.cpp's CreateIndexBuffer) or hold one inside a
+        // std::variant. GPUBufferHandle already move-only; m_count is a
+        // trivial scalar, so the defaults are exactly right.
+        Buffer(Buffer &&) noexcept = default;
+        Buffer &operator=(Buffer &&) noexcept = default;
+
         SDL_GPUBuffer *Get() const {
             return m_buffer.Get();
         }

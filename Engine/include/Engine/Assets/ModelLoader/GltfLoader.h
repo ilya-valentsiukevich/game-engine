@@ -12,10 +12,12 @@
 namespace Engine {
     // One glTF primitive: one material, one triangle list, already
     // converted into this engine's own Vertex layout (position, normal,
-    // UV) and Uint16 indices.
+    // UV) and indices. Uint32 because glTF's own index accessors go up to
+    // 32-bit — Mesh narrows back down to Uint16 on upload when a
+    // primitive's actual vertex count allows it (see Mesh.cpp).
     struct GltfPrimitive {
         std::vector<Vertex> vertices;
-        std::vector<Uint16> indices;
+        std::vector<Uint32> indices;
 
         // At most one of these is set: the base color image is either an
         // external file (baseColorTexturePath) or embedded in the glTF/GLB

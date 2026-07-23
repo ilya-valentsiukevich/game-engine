@@ -209,15 +209,11 @@ namespace Engine {
                 out.indices.reserve(primitive.indices->count);
 
                 for (cgltf_size i = 0; i < primitive.indices->count; ++i) {
+                    // glTF index accessors top out at an UNSIGNED_INT
+                    // (32-bit) component type, so this always fits Uint32 —
+                    // no overflow check needed, unlike the old Uint16 path.
                     const cgltf_size index = cgltf_accessor_read_index(primitive.indices, i);
-
-                    if (index > 0xFFFFu) {
-                        throw std::runtime_error(std::format(
-                            "glTF vertex index {} doesn't fit Uint16 ({})",
-                            index, path.string()));
-                    }
-
-                    out.indices.push_back(static_cast<Uint16>(index));
+                    out.indices.push_back(static_cast<Uint32>(index));
                 }
 
                 FillBaseColorInfo(primitive, modelDir, out);
