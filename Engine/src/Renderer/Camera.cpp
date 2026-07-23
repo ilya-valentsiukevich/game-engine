@@ -9,7 +9,11 @@ namespace Engine {
     void Camera::Update(float deltaTime, Input &input) {
         const auto [mouseDeltaX, mouseDeltaY] = input.ConsumeMouseDelta();
 
-        m_yaw += mouseDeltaX * m_mouseSensitivity;
+        // Under GLM_FORCE_LEFT_HANDED, right = cross(worldUp, forward) (see
+        // below), which makes d(forward)/d(yaw) point toward -right, not
+        // +right — increasing yaw alone would turn the camera left. Negating
+        // here makes mouse-right (positive xrel) turn the camera right.
+        m_yaw -= mouseDeltaX * m_mouseSensitivity;
         // Screen-space Y grows downward, so moving the mouse up (negative
         // yrel) should increase pitch (look up).
         m_pitch -= mouseDeltaY * m_mouseSensitivity;
