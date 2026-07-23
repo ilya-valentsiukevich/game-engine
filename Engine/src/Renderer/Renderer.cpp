@@ -13,7 +13,9 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
+#include <cmath>
 #include <format>
 
 namespace Engine {
@@ -83,6 +85,31 @@ namespace Engine {
 
         m_model = std::make_unique<Model>(
             m_device->Get(), "Assets/Models/Knight/Knight.glb", *m_sampler);
+
+        // Diorama: a "Platform" node that a handful of Knight instances are
+        // parented to. Rotating just the platform's LocalTransform in
+        // Update() rotates all of them together — the whole point of a
+        // scene graph over a flat list (M6 §1.1).
+        SceneNode &platform =
+                m_scene.GetRoot().AddChild(std::make_unique<SceneNode>("Platform"));
+        m_platformNode = &platform;
+
+        constexpr int kKnightCount = 4;
+        constexpr float kRadius = 2.5f;
+
+        for (int i = 0; i < kKnightCount; ++i) {
+            const float angle =
+                    glm::radians(360.0f / static_cast<float>(kKnightCount) * static_cast<float>(i));
+
+            auto knight = std::make_unique<SceneNode>(std::format("Knight{}", i));
+            knight->LocalTransform.Position =
+                    glm::vec3(std::cos(angle) * kRadius, 0.0f, std::sin(angle) * kRadius);
+            knight->LocalTransform.Rotation =
+                    glm::angleAxis(-angle, glm::vec3(0.0f, 1.0f, 0.0f));
+            knight->AttachedModel = m_model.get();
+
+            platform.AddChild(std::move(knight));
+        }
     }
 
     bool Renderer::BeginFrame() {
@@ -175,8 +202,15 @@ namespace Engine {
     }
 
     void Renderer::Update(float deltaTime) {
-        constexpr float kRotationSpeed = glm::radians(90.0f); // rad/sec
-        m_rotationAngle += kRotationSpeed * deltaTime;
+        constexpr float kRotationSpeed = glm::radians(30.0f); // rad/sec
+        m_platformRotationAngle += kRotationSpeed * deltaTime;
+
+        if (m_platformNode) {
+            m_platformNode->LocalTransform.Rotation =
+                    glm::angleAxis(m_platformRotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+        }
+
+        m_scene.Update();
     }
 
     void Renderer::Render(const Camera &camera) {
@@ -193,15 +227,20 @@ namespace Engine {
 
         const glm::mat4 view = camera.GetViewMatrix();
         const glm::mat4 projection = camera.GetProjectionMatrix(aspectRatio);
+        const glm::mat4 viewProjection = projection * view;
 
-        const glm::mat4 model =
-                glm::translate(glm::mat4(1.0f), m_modelPosition) *
-                glm::rotate(glm::mat4(1.0f), m_rotationAngle, glm::vec3(0.5f, 1.0f, 0.0f));
+        DrawNode(m_scene.GetRoot(), viewProjection);
+    }
 
-        const glm::mat4 mvp = projection * view * model;
+    void Renderer::DrawNode(const SceneNode &node, const glm::mat4 &viewProjection) {
+        if (node.AttachedModel) {
+            const glm::mat4 mvp = viewProjection * node.GetWorldMatrix();
+            SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
+            node.AttachedModel->Draw(m_renderPass);
+        }
 
-        SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
-
-        m_model->Draw(m_renderPass);
+        for (const std::unique_ptr<SceneNode> &child : node.GetChildren()) {
+            DrawNode(*child, viewProjection);
+        }
     }
 }
