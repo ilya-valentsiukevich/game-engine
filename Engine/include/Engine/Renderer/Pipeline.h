@@ -13,6 +13,7 @@ namespace Engine {
     public:
         Pipeline(SDL_GPUDevice *device,
                  SDL_GPUTextureFormat colorFormat,
+                 SDL_GPUTextureFormat depthFormat,
                  const Shader &vertexShader,
                  const Shader &fragmentShader);
 

@@ -13,6 +13,7 @@
 namespace Engine {
     Pipeline::Pipeline(SDL_GPUDevice *device,
                         SDL_GPUTextureFormat colorFormat,
+                        SDL_GPUTextureFormat depthFormat,
                         const Shader &vertexShader,
                         const Shader &fragmentShader) {
         SDL_GPUColorTargetDescription colorTargetDescription{};
@@ -27,7 +28,7 @@ namespace Engine {
         SDL_GPUVertexAttribute vertexAttributes[2]{};
         vertexAttributes[0].location = 0;
         vertexAttributes[0].buffer_slot = 0;
-        vertexAttributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+        vertexAttributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
         vertexAttributes[0].offset = offsetof(Vertex, Position);
 
         vertexAttributes[1].location = 1;
@@ -49,6 +50,12 @@ namespace Engine {
         pipelineCreateInfo.target_info.color_target_descriptions =
                 &colorTargetDescription;
         pipelineCreateInfo.target_info.num_color_targets = 1;
+        pipelineCreateInfo.target_info.depth_stencil_format = depthFormat;
+        pipelineCreateInfo.target_info.has_depth_stencil_target = true;
+
+        pipelineCreateInfo.depth_stencil_state.enable_depth_test = true;
+        pipelineCreateInfo.depth_stencil_state.enable_depth_write = true;
+        pipelineCreateInfo.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
 
         SDL_GPUGraphicsPipeline *pipeline =
                 SDL_CreateGPUGraphicsPipeline(device, &pipelineCreateInfo);

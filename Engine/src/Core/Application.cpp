@@ -5,6 +5,8 @@
 #include <Engine/Core/Application.h>
 #include <SDL3/SDL.h>
 
+#include <algorithm>
+
 namespace Engine {
     Application::Application()
         : m_window("My Engine", 1280, 720), m_renderer(m_window) {
@@ -14,15 +16,29 @@ namespace Engine {
         Uint64 previousCounter = SDL_GetPerformanceCounter();
         const Uint64 frequency = SDL_GetPerformanceFrequency();
 
+        constexpr float kFixedDeltaTime = 1.0f / 60.0f;
+        float accumulator = 0.0f;
+
         while (m_running) {
             const Uint64 currentCounter = SDL_GetPerformanceCounter();
-            const float deltaTime =
+            float frameTime =
                     static_cast<float>(currentCounter - previousCounter) /
                     static_cast<float>(frequency);
             previousCounter = currentCounter;
 
+            // Guards against the "spiral of death" after a long stall (e.g.
+            // the window was minimized) by not trying to catch up more than
+            // a quarter second of simulation in one go.
+            frameTime = std::min(frameTime, 0.25f);
+
             PollEvents();
-            Update(deltaTime);
+
+            accumulator += frameTime;
+            while (accumulator >= kFixedDeltaTime) {
+                Update(kFixedDeltaTime);
+                accumulator -= kFixedDeltaTime;
+            }
+
             Render();
 
             SDL_Delay(1);
@@ -44,7 +60,8 @@ namespace Engine {
         }
     }
 
-    void Application::Update([[maybe_unused]] float deltaTime) {
+    void Application::Update(float deltaTime) {
+        m_renderer.Update(deltaTime);
     }
 
     void Application::Render() {

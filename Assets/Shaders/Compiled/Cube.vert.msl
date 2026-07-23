@@ -1,0 +1,30 @@
+#include <metal_stdlib>
+using namespace metal;
+
+struct VSInput
+{
+    float3 Position [[attribute(0)]];
+    float3 Color    [[attribute(1)]];
+};
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float3 Color;
+};
+
+struct UniformBlock
+{
+    float4x4 MVP;
+};
+
+vertex VSOutput main0(VSInput in [[stage_in]],
+                       constant UniformBlock &uniforms [[buffer(0)]])
+{
+    VSOutput out;
+
+    out.Position = uniforms.MVP * float4(in.Position, 1.0);
+    out.Color = in.Color;
+
+    return out;
+}
