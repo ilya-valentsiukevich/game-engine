@@ -106,12 +106,21 @@ namespace Engine {
 
                 const cgltf_accessor *positionAccessor =
                         cgltf_find_accessor(&primitive, cgltf_attribute_type_position, 0);
+                const cgltf_accessor *normalAccessor =
+                        cgltf_find_accessor(&primitive, cgltf_attribute_type_normal, 0);
                 const cgltf_accessor *texCoordAccessor =
                         cgltf_find_accessor(&primitive, cgltf_attribute_type_texcoord, 0);
 
                 if (!positionAccessor) {
                     throw std::runtime_error(std::format(
                         "glTF primitive has no POSITION attribute ({})", path.string()));
+                }
+
+                if (!normalAccessor) {
+                    throw std::runtime_error(std::format(
+                        "glTF primitive has no NORMAL attribute ({}) — lighting needs "
+                        "per-vertex normals, re-export the model with normals included",
+                        path.string()));
                 }
 
                 if (!primitive.indices) {
@@ -127,6 +136,11 @@ namespace Engine {
                     if (!cgltf_accessor_read_float(positionAccessor, i, out.vertices[i].Position, 3)) {
                         throw std::runtime_error(std::format(
                             "Failed to read POSITION[{}] ({})", i, path.string()));
+                    }
+
+                    if (!cgltf_accessor_read_float(normalAccessor, i, out.vertices[i].Normal, 3)) {
+                        throw std::runtime_error(std::format(
+                            "Failed to read NORMAL[{}] ({})", i, path.string()));
                     }
 
                     if (texCoordAccessor) {
