@@ -6,7 +6,7 @@
 
 namespace Engine {
     struct Vertex {
-        float Position[2];
+        float Position[3];
         float Color[3];
     };
 }
