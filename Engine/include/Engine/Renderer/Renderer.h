@@ -3,6 +3,8 @@
 //
 #pragma once
 
+#include <Engine/Renderer/GPUResource.h>
+
 #include <SDL3/SDL.h>
 #include <memory>
 
@@ -36,6 +38,8 @@ namespace Engine {
         // m_device (reverse declaration order), which they need to still
         // be alive when they release their GPU resources.
         std::unique_ptr<GPUDevice> m_device;
+
+        GPUTextureHandle m_depthTexture;
 
         SDL_GPUCommandBuffer *m_commandBuffer = nullptr;
         SDL_GPUTexture *m_swapchainTexture = nullptr;

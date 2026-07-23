@@ -65,4 +65,5 @@ namespace Engine {
     using GPUPipelineHandle = GPUResource<SDL_GPUGraphicsPipeline, SDL_ReleaseGPUGraphicsPipeline>;
     using GPUBufferHandle = GPUResource<SDL_GPUBuffer, SDL_ReleaseGPUBuffer>;
     using GPUTransferBufferHandle = GPUResource<SDL_GPUTransferBuffer, SDL_ReleaseGPUTransferBuffer>;
+    using GPUTextureHandle = GPUResource<SDL_GPUTexture, SDL_ReleaseGPUTexture>;
 }

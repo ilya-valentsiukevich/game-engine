@@ -43,9 +43,30 @@ namespace Engine {
             m_device->Get(),
             m_window->GetNativeWindow());
 
-        // Actual depth texture creation and render pass wiring land in the
-        // next step; the pipeline only needs to know the format up front.
         constexpr SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+
+        int windowWidth = 0;
+        int windowHeight = 0;
+        SDL_GetWindowSizeInPixels(
+            m_window->GetNativeWindow(), &windowWidth, &windowHeight);
+
+        SDL_GPUTextureCreateInfo depthCreateInfo{};
+        depthCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+        depthCreateInfo.format = depthFormat;
+        depthCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+        depthCreateInfo.width = static_cast<Uint32>(windowWidth);
+        depthCreateInfo.height = static_cast<Uint32>(windowHeight);
+        depthCreateInfo.layer_count_or_depth = 1;
+        depthCreateInfo.num_levels = 1;
+        depthCreateInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+
+        m_depthTexture = GPUTextureHandle(
+            m_device->Get(), SDL_CreateGPUTexture(m_device->Get(), &depthCreateInfo));
+
+        if (!m_depthTexture) {
+            throw std::runtime_error(
+                std::format("Failed to create depth texture: {}", SDL_GetError()));
+        }
 
         m_pipeline = std::make_unique<Pipeline>(
             m_device->Get(), colorFormat, depthFormat, vertexShader, fragmentShader);
@@ -105,11 +126,19 @@ namespace Engine {
         colorTarget.load_op = SDL_GPU_LOADOP_CLEAR;
         colorTarget.store_op = SDL_GPU_STOREOP_STORE;
 
+        SDL_GPUDepthStencilTargetInfo depthTarget{};
+        depthTarget.texture = m_depthTexture.Get();
+        depthTarget.clear_depth = 1.0f;
+        depthTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+        depthTarget.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        depthTarget.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+        depthTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
         m_renderPass = SDL_BeginGPURenderPass(
             m_commandBuffer,
             &colorTarget,
             1,
-            nullptr);
+            &depthTarget);
 
         return true;
     }
@@ -133,9 +162,9 @@ namespace Engine {
         if (!m_device)
             return;
 
-        // m_vertexBuffer/m_pipeline release themselves via their own
-        // destructors (declared after m_device, so they run first).
-        // m_device itself is destroyed last.
+        // m_depthTexture/m_vertexBuffer/m_pipeline release themselves via
+        // their own destructors (declared after m_device, so they run
+        // first). m_device itself is destroyed last.
         SDL_ReleaseWindowFromGPUDevice(
             m_device->Get(),
             m_window->GetNativeWindow());
