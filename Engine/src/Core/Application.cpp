@@ -76,13 +76,12 @@ namespace Engine {
     }
 
     void Application::Update(float deltaTime) {
-        m_camera.Update(deltaTime, m_input);
-        m_renderer.Update(deltaTime);
+        m_renderer.Update(deltaTime, m_input);
     }
 
     void Application::Render() {
         if (m_renderer.BeginFrame()) {
-            m_renderer.Render(m_camera);
+            m_renderer.Render();
             m_renderer.EndFrame();
         }
     }

@@ -4,22 +4,19 @@
 #pragma once
 
 #include <Engine/Assets/AssetManager.h>
+#include <Engine/Core/Input.h>
 #include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Renderer/GPUResource.h>
-#include <Engine/Renderer/Light.h>
-#include <Engine/Scene/Scene.h>
 
 #include <SDL3/SDL.h>
+#include <entt/entt.hpp>
 #include <glm/glm.hpp>
 #include <memory>
-#include <vector>
 
 namespace Engine {
     class GPUDevice;
     class Window;
     class Pipeline;
-    class Model;
-    class Camera;
     class Sampler;
 
     class Renderer {
@@ -34,20 +31,15 @@ namespace Engine {
 
         void EndFrame();
 
-        void Update(float deltaTime);
+        void Update(float deltaTime, Input &input);
 
-        void Render(const Camera &camera);
+        void Render();
 
         // Re-stats every cached asset (currently: Textures) and swaps in
         // any that changed on disk since the last load or reload.
         void ReloadChangedAssets();
 
     private:
-        // Recursively draws node and every descendant that has an
-        // AttachedModel, pushing the node's MVP and world (model) matrices
-        // as the vertex uniform before each Model::Draw.
-        void DrawNode(const SceneNode &node, const glm::mat4 &viewProjection);
-
         Window *m_window = nullptr;
 
         // Declaration order matters: members below are destroyed before
@@ -66,23 +58,19 @@ namespace Engine {
 
         AssetManager m_assets;
 
-        // One entry per diorama character (see constructor) — a vector of
-        // AssetHandle rather than a vector of Model keeps every Model's
-        // address stable across reallocation, which SceneNode::AttachedModel
-        // pointers below depend on. Backed by m_assets.Models, so placing
-        // the same character twice would share one Model instead of
-        // loading it twice.
-        std::vector<AssetHandle<Model>> m_models;
+        // Owns every entity in the scene: the diorama characters
+        // (Transform + MeshRenderer + Spin), the camera (Camera) and the
+        // light (DirectionalLight). Declared after m_device/m_assets so it
+        // is destroyed first, while the GPU device backing any AssetHandle
+        // still held by a MeshRenderer component is still alive.
+        entt::registry m_registry;
 
-        Scene m_scene;
-        // Non-owning — points at a node owned by m_scene's tree, kept
-        // around only so Update() can spin it without walking the tree by
-        // name every frame.
-        SceneNode *m_platformNode = nullptr;
+        // Convenience handles for the one camera and one light entity this
+        // milestone creates, so Update()/Render() don't have to search the
+        // registry for them every frame.
+        entt::entity m_cameraEntity = entt::null;
+        entt::entity m_lightEntity = entt::null;
 
-        float m_platformRotationAngle = 0.0f;
-
-        DirectionalLight m_light;
         float m_lightAngle = 0.0f;
     };
 }
