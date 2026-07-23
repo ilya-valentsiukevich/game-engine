@@ -13,7 +13,7 @@ add_library(Engine STATIC
         src/Renderer/Sampler.cpp
         src/Renderer/Material.cpp
         src/Renderer/Model.cpp
-        src/Scene/Transform.cpp
+        src/ECS/Transform.cpp
         src/Scene/SceneNode.cpp
         src/Scene/Scene.cpp
         src/Assets/AssetManager.cpp
