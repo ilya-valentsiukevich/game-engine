@@ -8,8 +8,12 @@
 #include <Engine/Renderer/Pipeline.h>
 #include <Engine/Renderer/Model.h>
 #include <Engine/Renderer/Camera.h>
+#include <Engine/Renderer/Light.h>
 #include <Engine/Renderer/Sampler.h>
 #include <Engine/Window/Window.h>
+#include <Engine/ECS/Components.h>
+#include <Engine/ECS/Systems.h>
+#include <Engine/ECS/Transform.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -84,6 +88,12 @@ namespace Engine {
             SDL_GPU_FILTER_LINEAR,
             SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
 
+        m_cameraEntity = m_registry.create();
+        m_registry.emplace<Camera>(m_cameraEntity);
+
+        m_lightEntity = m_registry.create();
+        m_registry.emplace<DirectionalLight>(m_lightEntity);
+
         struct DioramaCharacter {
             const char *name;
             const char *modelPath;
@@ -98,17 +108,8 @@ namespace Engine {
         };
         constexpr int kCharacterCount =
                 static_cast<int>(std::size(kDioramaCharacters));
-
-        // Diorama: a "Platform" node that one instance of each character is
-        // parented to. Rotating just the platform's local transform in
-        // Update() rotates all of them together.
-        SceneNode &platform =
-                m_scene.GetRoot().AddChild(std::make_unique<SceneNode>("Platform"));
-        m_platformNode = &platform;
-
         constexpr float kRadius = 3.0f;
-
-        m_models.reserve(kCharacterCount);
+        constexpr float kPlatformSpinSpeed = glm::radians(30.0f); // rad/sec
 
         for (int i = 0; i < kCharacterCount; ++i) {
             const DioramaCharacter &character = kDioramaCharacters[i];
@@ -119,19 +120,17 @@ namespace Engine {
                     return std::make_shared<Model>(m_device->Get(), path, *m_sampler, m_assets);
                 });
 
-            m_models.push_back(model);
-
             const float angle =
                     glm::radians(360.0f / static_cast<float>(kCharacterCount) * static_cast<float>(i));
 
-            auto node = std::make_unique<SceneNode>(character.name);
-            node->GetLocalTransform().Position =
-                    glm::vec3(std::cos(angle) * kRadius, 0.0f, std::sin(angle) * kRadius);
-            node->GetLocalTransform().Rotation =
-                    glm::angleAxis(-angle, glm::vec3(0.0f, 1.0f, 0.0f));
-            node->AttachedModel = model.get();
+            const entt::entity entity = m_registry.create();
 
-            platform.AddChild(std::move(node));
+            Transform &transform = m_registry.emplace<Transform>(entity);
+            transform.Position = glm::vec3(std::cos(angle) * kRadius, 0.0f, std::sin(angle) * kRadius);
+            transform.Rotation = glm::angleAxis(-angle, glm::vec3(0.0f, 1.0f, 0.0f));
+
+            m_registry.emplace<MeshRenderer>(entity, std::move(model));
+            m_registry.emplace<Spin>(entity, glm::vec3(0.0f, 1.0f, 0.0f), kPlatformSpinSpeed);
         }
     }
 
@@ -216,35 +215,30 @@ namespace Engine {
         if (!m_device)
             return;
 
-        // m_depthTexture/m_pipeline/m_sampler/m_models release themselves via
-        // their own destructors (declared after m_device, so they run first).
-        // m_device itself is destroyed last.
+        // m_depthTexture/m_pipeline/m_sampler/m_registry release themselves
+        // via their own destructors (declared after m_device, so they run
+        // first). m_device itself is destroyed last.
         SDL_ReleaseWindowFromGPUDevice(
             m_device->Get(),
             m_window->GetNativeWindow());
     }
 
-    void Renderer::Update(float deltaTime) {
-        constexpr float kRotationSpeed = glm::radians(30.0f); // rad/sec
-        m_platformRotationAngle += kRotationSpeed * deltaTime;
+    void Renderer::Update(float deltaTime, Input &input) {
+        m_registry.get<Camera>(m_cameraEntity).Update(deltaTime, input);
 
-        if (m_platformNode) {
-            m_platformNode->GetLocalTransform().Rotation =
-                    glm::angleAxis(m_platformRotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
-        }
+        RotateSystem(m_registry, deltaTime);
 
         // Slow arc across the sky around the diorama's vertical axis, tilted
         // down toward the ground — a primitive day/night cycle.
         constexpr float kLightRotationSpeed = glm::radians(6.0f); // rad/sec
         m_lightAngle += kLightRotationSpeed * deltaTime;
 
-        m_light.Direction = glm::normalize(glm::vec3(
+        DirectionalLight &light = m_registry.get<DirectionalLight>(m_lightEntity);
+        light.Direction = glm::normalize(glm::vec3(
             std::cos(m_lightAngle), -0.6f, std::sin(m_lightAngle)));
-
-        m_scene.Update();
     }
 
-    void Renderer::Render(const Camera &camera) {
+    void Renderer::Render() {
         if (!m_renderPass)
             return;
 
@@ -256,9 +250,12 @@ namespace Engine {
         const float aspectRatio =
                 static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
 
+        const Camera &camera = m_registry.get<Camera>(m_cameraEntity);
         const glm::mat4 view = camera.GetViewMatrix();
         const glm::mat4 projection = camera.GetProjectionMatrix(aspectRatio);
         const glm::mat4 viewProjection = projection * view;
+
+        const DirectionalLight &light = m_registry.get<DirectionalLight>(m_lightEntity);
 
         struct LightUniformBlock {
             glm::vec4 Direction;
@@ -268,37 +265,18 @@ namespace Engine {
         };
 
         const LightUniformBlock lightUniform{
-            glm::vec4(m_light.Direction, 0.0f),
-            glm::vec4(m_light.Color, 0.0f),
+            glm::vec4(light.Direction, 0.0f),
+            glm::vec4(light.Color, 0.0f),
             glm::vec4(camera.GetPosition(), 0.0f),
-            glm::vec4(m_light.AmbientStrength, m_light.SpecularStrength, m_light.Shininess, 0.0f),
+            glm::vec4(light.AmbientStrength, light.SpecularStrength, light.Shininess, 0.0f),
         };
 
         SDL_PushGPUFragmentUniformData(m_commandBuffer, 0, &lightUniform, sizeof(lightUniform));
 
-        DrawNode(m_scene.GetRoot(), viewProjection);
+        RenderSystem(m_registry, m_commandBuffer, m_renderPass, viewProjection);
     }
 
     void Renderer::ReloadChangedAssets() {
         m_assets.ReloadChanged();
-    }
-
-    void Renderer::DrawNode(const SceneNode &node, const glm::mat4 &viewProjection) {
-        if (node.AttachedModel) {
-            struct VertexUniformBlock {
-                glm::mat4 MVP;
-                glm::mat4 Model;
-            };
-
-            const glm::mat4 &model = node.GetWorldMatrix();
-            const VertexUniformBlock vertexUniform{viewProjection * model, model};
-
-            SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &vertexUniform, sizeof(vertexUniform));
-            node.AttachedModel->Draw(m_renderPass);
-        }
-
-        for (const std::unique_ptr<SceneNode> &child : node.GetChildren()) {
-            DrawNode(*child, viewProjection);
-        }
     }
 }
