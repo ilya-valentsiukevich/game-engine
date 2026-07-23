@@ -10,6 +10,7 @@
 namespace Engine {
     Application::Application()
         : m_window("My Engine", 1280, 720), m_renderer(m_window) {
+        SDL_SetWindowRelativeMouseMode(m_window.GetNativeWindow(), true);
     }
 
     void Application::Run() {
