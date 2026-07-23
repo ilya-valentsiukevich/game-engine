@@ -3,9 +3,14 @@
 //
 
 #include <Engine/Assets/ModelLoader/GltfLoader.h>
+#include <Engine/Renderer/GlmConfig.h>
 
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <format>
 #include <stdexcept>
@@ -70,6 +75,35 @@ namespace Engine {
                 out.baseColorTextureData.assign(data, data + size);
             }
         }
+
+        // Folds the node's world transform (its own TRS composed with every
+        // ancestor's, via cgltf) into the primitive's vertices, so the
+        // returned geometry sits in the same space regardless of where in
+        // the node hierarchy it came from — a mesh nested under a moved/
+        // rotated/scaled node (any non-trivial Blender export) ends up
+        // exactly where the artist placed it instead of at its raw local
+        // origin.
+        void BakeNodeTransform(const cgltf_node &node, GltfPrimitive &primitive) {
+            cgltf_float worldMatrix[16];
+            cgltf_node_transform_world(&node, worldMatrix);
+
+            const glm::mat4 model = glm::make_mat4(worldMatrix);
+            const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(model));
+
+            for (Vertex &vertex : primitive.vertices) {
+                const glm::vec3 position = glm::vec3(
+                    model * glm::vec4(vertex.Position[0], vertex.Position[1], vertex.Position[2], 1.0f));
+                vertex.Position[0] = position.x;
+                vertex.Position[1] = position.y;
+                vertex.Position[2] = position.z;
+
+                const glm::vec3 normal = glm::normalize(normalMatrix *
+                    glm::vec3(vertex.Normal[0], vertex.Normal[1], vertex.Normal[2]));
+                vertex.Normal[0] = normal.x;
+                vertex.Normal[1] = normal.y;
+                vertex.Normal[2] = normal.z;
+            }
+        }
     }
 
     std::vector<GltfPrimitive> GltfLoader::Load(const std::filesystem::path &path) {
@@ -95,8 +129,19 @@ namespace Engine {
         const std::filesystem::path modelDir = path.parent_path();
         std::vector<GltfPrimitive> primitives;
 
-        for (cgltf_size meshIndex = 0; meshIndex < guard.data->meshes_count; ++meshIndex) {
-            const cgltf_mesh &mesh = guard.data->meshes[meshIndex];
+        // Walking the flat node list (rather than data->scene->nodes
+        // recursively) gives the same result: cgltf_node_transform_world
+        // composes a node's full ancestor chain internally regardless of
+        // how it's reached, so there's no need to re-walk the hierarchy by
+        // hand here. Nodes without a mesh (empty transform/joint/camera
+        // nodes) are simply skipped.
+        for (cgltf_size nodeIndex = 0; nodeIndex < guard.data->nodes_count; ++nodeIndex) {
+            const cgltf_node &node = guard.data->nodes[nodeIndex];
+
+            if (!node.mesh)
+                continue;
+
+            const cgltf_mesh &mesh = *node.mesh;
 
             for (cgltf_size primIndex = 0; primIndex < mesh.primitives_count; ++primIndex) {
                 const cgltf_primitive &primitive = mesh.primitives[primIndex];
@@ -166,6 +211,7 @@ namespace Engine {
                 }
 
                 FillBaseColorTexture(primitive, modelDir, out);
+                BakeNodeTransform(node, out);
 
                 primitives.push_back(std::move(out));
             }

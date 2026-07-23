@@ -26,8 +26,11 @@ namespace Engine {
     };
 
     // Parses a glTF 2.0 file via cgltf and flattens every triangle-list
-    // primitive of every mesh into a GltfPrimitive. Ignores node transforms
-    // — every primitive comes back in its own local mesh space.
+    // primitive of every mesh-holding node into a GltfPrimitive, with each
+    // node's world transform already baked into its vertices — so a
+    // multi-node file (e.g. a small scene authored in Blender) comes back
+    // as one consistent set of primitives in a single shared space, not one
+    // per node's own local mesh space.
     class GltfLoader {
     public:
         static std::vector<GltfPrimitive> Load(const std::filesystem::path &path);
