@@ -50,6 +50,8 @@ namespace Engine {
         SDL_Event event;
 
         while (SDL_PollEvent(&event)) {
+            m_renderer.ProcessDebugUIEvent(event);
+
             switch (event.type) {
                 case SDL_EVENT_QUIT:
                     m_running = false;
