@@ -7,22 +7,24 @@
 #include <fstream>
 #include <stdexcept>
 
-std::vector<std::byte> ShaderLoader::LoadBinary(
-    const std::filesystem::path &path) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
+namespace Engine {
+    std::vector<std::byte> ShaderLoader::LoadBinary(
+        const std::filesystem::path &path) {
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
 
-    if (!file)
-        throw std::runtime_error("Failed to open shader: " + path.string());
+        if (!file)
+            throw std::runtime_error("Failed to open shader: " + path.string());
 
-    const auto size = file.tellg();
+        const auto size = file.tellg();
 
-    std::vector<std::byte> data(size);
+        std::vector<std::byte> data(size);
 
-    file.seekg(0);
+        file.seekg(0);
 
-    file.read(
-        reinterpret_cast<char *>(data.data()),
-        size);
+        file.read(
+            reinterpret_cast<char *>(data.data()),
+            size);
 
-    return data;
+        return data;
+    }
 }

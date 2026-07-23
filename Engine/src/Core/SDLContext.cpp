@@ -8,13 +8,15 @@
 #include <format>
 #include <stdexcept>
 
-SDLContext::SDLContext() {
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        throw std::runtime_error(
-            std::format("Failed to init SDL: {}", SDL_GetError()));
+namespace Engine {
+    SDLContext::SDLContext() {
+        if (!SDL_Init(SDL_INIT_VIDEO)) {
+            throw std::runtime_error(
+                std::format("Failed to init SDL: {}", SDL_GetError()));
+        }
     }
-}
 
-SDLContext::~SDLContext() {
-    SDL_Quit();
+    SDLContext::~SDLContext() {
+        SDL_Quit();
+    }
 }

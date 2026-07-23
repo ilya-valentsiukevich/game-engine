@@ -5,18 +5,20 @@
 
 #include <SDL3/SDL_gpu.h>
 
-class GPUDevice {
-public:
-    GPUDevice();
-    ~GPUDevice();
+namespace Engine {
+    class GPUDevice {
+    public:
+        GPUDevice();
+        ~GPUDevice();
 
-    GPUDevice(const GPUDevice &) = delete;
-    GPUDevice &operator=(const GPUDevice &) = delete;
+        GPUDevice(const GPUDevice &) = delete;
+        GPUDevice &operator=(const GPUDevice &) = delete;
 
-    SDL_GPUDevice *Get() const {
-        return m_device;
-    }
+        SDL_GPUDevice *Get() const {
+            return m_device;
+        }
 
-private:
-    SDL_GPUDevice *m_device{};
-};
+    private:
+        SDL_GPUDevice *m_device{};
+    };
+}

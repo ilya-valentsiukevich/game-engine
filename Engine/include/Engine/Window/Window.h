@@ -5,17 +5,19 @@
 
 #include <SDL3/SDL_video.h>
 
-class Window {
-public:
-    Window(const char *title, int width, int height);
+namespace Engine {
+    class Window {
+    public:
+        Window(const char *title, int width, int height);
 
-    ~Window();
+        ~Window();
 
-    Window(const Window &) = delete;
-    Window &operator=(const Window &) = delete;
+        Window(const Window &) = delete;
+        Window &operator=(const Window &) = delete;
 
-    SDL_Window *GetNativeWindow() const;
+        SDL_Window *GetNativeWindow() const;
 
-private:
-    SDL_Window *m_window = nullptr;
-};
+    private:
+        SDL_Window *m_window = nullptr;
+    };
+}

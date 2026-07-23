@@ -4,7 +4,9 @@
 
 #pragma once
 
-struct Vertex {
-    float Position[2];
-    float Color[3];
-};
+namespace Engine {
+    struct Vertex {
+        float Position[2];
+        float Color[3];
+    };
+}

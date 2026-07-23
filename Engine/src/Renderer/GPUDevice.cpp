@@ -7,17 +7,19 @@
 #include <format>
 #include <stdexcept>
 
-GPUDevice::GPUDevice() {
-    m_device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_MSL,
-                                   true,
-                                   nullptr);
+namespace Engine {
+    GPUDevice::GPUDevice() {
+        m_device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_MSL,
+                                       true,
+                                       nullptr);
 
-    if (!m_device) {
-        throw std::runtime_error(
-            std::format("Failed to create GPU device: {}", SDL_GetError()));
+        if (!m_device) {
+            throw std::runtime_error(
+                std::format("Failed to create GPU device: {}", SDL_GetError()));
+        }
     }
-}
 
-GPUDevice::~GPUDevice() {
-    SDL_DestroyGPUDevice(m_device);
+    GPUDevice::~GPUDevice() {
+        SDL_DestroyGPUDevice(m_device);
+    }
 }

@@ -4,35 +4,37 @@
 
 #pragma once
 
-#include "Engine/Core/SDLContext.h"
-#include "Engine/Window/Window.h"
-#include "Engine/Renderer/Renderer.h"
+#include <Engine/Core/SDLContext.h>
+#include <Engine/Window/Window.h>
+#include <Engine/Renderer/Renderer.h>
 
-class Application {
-public:
-    Application();
+namespace Engine {
+    class Application {
+    public:
+        Application();
 
-    ~Application() = default;
+        ~Application() = default;
 
-    Application(const Application &) = delete;
-    Application &operator=(const Application &) = delete;
+        Application(const Application &) = delete;
+        Application &operator=(const Application &) = delete;
 
-    void Run();
+        void Run();
 
-private:
-    void PollEvents();
+    private:
+        void PollEvents();
 
-    void Update();
+        void Update(float deltaTime);
 
-    void Render();
+        void Render();
 
-private:
-    bool m_running = true;
+    private:
+        bool m_running = true;
 
-    // Declaration order matters: m_sdl must be constructed before, and
-    // destroyed after, m_window and m_renderer, since they depend on SDL
-    // being initialized for their entire lifetime.
-    SDLContext m_sdl;
-    Window m_window;
-    Renderer m_renderer;
-};
+        // Declaration order matters: m_sdl must be constructed before, and
+        // destroyed after, m_window and m_renderer, since they depend on SDL
+        // being initialized for their entire lifetime.
+        SDLContext m_sdl;
+        Window m_window;
+        Renderer m_renderer;
+    };
+}

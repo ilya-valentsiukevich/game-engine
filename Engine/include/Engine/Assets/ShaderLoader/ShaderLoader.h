@@ -6,8 +6,10 @@
 #include <filesystem>
 #include <vector>
 
-class ShaderLoader {
-public:
-    static std::vector<std::byte> LoadBinary(
-        const std::filesystem::path &path);
-};
+namespace Engine {
+    class ShaderLoader {
+    public:
+        static std::vector<std::byte> LoadBinary(
+            const std::filesystem::path &path);
+    };
+}

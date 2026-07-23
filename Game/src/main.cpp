@@ -5,7 +5,7 @@
 
 int main() {
     try {
-        Application app;
+        Engine::Application app;
         app.Run();
     } catch (const std::exception &e) {
         SDL_Log("Fatal error: %s", e.what());
