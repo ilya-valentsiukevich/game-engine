@@ -11,7 +11,8 @@
 namespace Engine {
     Shader::Shader(SDL_GPUDevice *device,
                    const std::filesystem::path &path,
-                   SDL_GPUShaderStage stage) {
+                   SDL_GPUShaderStage stage,
+                   Uint32 numUniformBuffers) {
         const auto code = ShaderLoader::LoadBinary(path);
 
         SDL_GPUShaderCreateInfo createInfo{};
@@ -21,7 +22,7 @@ namespace Engine {
         createInfo.format = SDL_GPU_SHADERFORMAT_MSL;
         createInfo.stage = stage;
         createInfo.num_samplers = 0;
-        createInfo.num_uniform_buffers = 0;
+        createInfo.num_uniform_buffers = numUniformBuffers;
         createInfo.num_storage_buffers = 0;
         createInfo.num_storage_textures = 0;
 

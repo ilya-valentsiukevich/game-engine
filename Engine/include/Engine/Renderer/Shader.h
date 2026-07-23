@@ -13,7 +13,8 @@ namespace Engine {
     public:
         Shader(SDL_GPUDevice *device,
                const std::filesystem::path &path,
-               SDL_GPUShaderStage stage);
+               SDL_GPUShaderStage stage,
+               Uint32 numUniformBuffers = 0);
 
         Shader(const Shader &) = delete;
         Shader &operator=(const Shader &) = delete;
