@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Engine/Core/AppMode.h>
 #include <Engine/Renderer/GPUResource.h>
 #include <Engine/Window/Window.h>
 
@@ -25,10 +26,12 @@ namespace Engine {
         // PollEvents switch also handles that same event.
         void ProcessEvent(const SDL_Event &event);
 
-        // Builds this frame's ImGui windows (FPS overlay, entity list,
-        // inspector). Pure CPU-side widget construction, no GPU calls — can
-        // run at any point before FinalizeDrawData.
-        void Draw(entt::registry &registry);
+        // Builds this frame's ImGui windows. The FPS overlay is always
+        // built; the Entities list and Inspector only in AppMode::Debug —
+        // in AppMode::Game the mouse is captured by the camera, so they
+        // couldn't be clicked anyway. Pure CPU-side widget construction, no
+        // GPU calls — can run at any point before FinalizeDrawData.
+        void Draw(entt::registry &registry, AppMode mode);
 
         // Finalizes this frame's draw data and uploads vertex/index buffers
         // to the GPU. Must be called while no render pass is active: this

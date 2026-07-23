@@ -35,14 +35,17 @@ namespace Engine {
         ImGui_ImplSDL3_ProcessEvent(&event);
     }
 
-    void DebugUI::Draw(entt::registry &registry) {
+    void DebugUI::Draw(entt::registry &registry, AppMode mode) {
         ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
         DrawOverlay();
-        DrawEntityList(registry);
-        DrawInspector(registry);
+
+        if (mode == AppMode::Debug) {
+            DrawEntityList(registry);
+            DrawInspector(registry);
+        }
     }
 
     void DebugUI::FinalizeDrawData(SDL_GPUCommandBuffer *commandBuffer) {

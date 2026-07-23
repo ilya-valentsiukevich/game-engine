@@ -229,8 +229,9 @@ namespace Engine {
             m_window->GetNativeWindow());
     }
 
-    void Renderer::Update(float deltaTime, Input &input) {
-        m_registry.get<Camera>(m_cameraEntity).Update(deltaTime, input);
+    void Renderer::Update(float deltaTime, Input &input, AppMode mode) {
+        if (mode == AppMode::Game)
+            m_registry.get<Camera>(m_cameraEntity).Update(deltaTime, input);
 
         RotateSystem(m_registry, deltaTime);
 
@@ -244,11 +245,11 @@ namespace Engine {
             std::cos(m_lightAngle), -0.6f, std::sin(m_lightAngle)));
     }
 
-    void Renderer::Render() {
+    void Renderer::Render(AppMode mode) {
         if (!m_renderPass)
             return;
 
-        m_debugUI->Draw(m_registry);
+        m_debugUI->Draw(m_registry, mode);
 
         SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline->Get());
 
