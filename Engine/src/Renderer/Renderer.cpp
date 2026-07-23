@@ -43,8 +43,12 @@ namespace Engine {
             m_device->Get(),
             m_window->GetNativeWindow());
 
+        // Actual depth texture creation and render pass wiring land in the
+        // next step; the pipeline only needs to know the format up front.
+        constexpr SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+
         m_pipeline = std::make_unique<Pipeline>(
-            m_device->Get(), colorFormat, vertexShader, fragmentShader);
+            m_device->Get(), colorFormat, depthFormat, vertexShader, fragmentShader);
 
         constexpr std::array<Vertex, 3> vertices{
             Vertex{{0.0f, 0.5f}, {1.0f, 0.0f, 0.0f}},
