@@ -91,4 +91,10 @@ namespace Engine {
             part.mesh->Draw(renderPass);
         }
     }
+
+    void Model::DrawDepthOnly(SDL_GPURenderPass *renderPass) const {
+        for (const MeshPart &part : m_parts) {
+            part.mesh->Draw(renderPass);
+        }
+    }
 }
