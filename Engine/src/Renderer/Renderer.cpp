@@ -9,6 +9,7 @@
 #include <Engine/Renderer/Camera.h>
 #include <Engine/Renderer/Light.h>
 #include <Engine/Renderer/Sampler.h>
+#include <Engine/Renderer/ShadowMap.h>
 #include <Engine/Renderer/DebugUI.h>
 #include <Engine/Window/Window.h>
 #include <Engine/ECS/Components.h>
@@ -21,6 +22,41 @@
 #include <format>
 
 namespace Engine {
+    namespace {
+        // Hand-tuned bounds for the shadow camera's orthographic frustum,
+        // sized for BuildDiorama's ~3-unit-radius circle of characters (see
+        // Game/main.cpp) — the same "fit the known scene by eye" approach
+        // Camera's own near/far planes already take for the main camera.
+        constexpr float kShadowOrthoHalfExtent = 6.0f;
+        constexpr float kShadowNearPlane = 0.1f;
+        constexpr float kShadowFarPlane = 20.0f;
+        constexpr float kShadowDistance = 10.0f;
+        constexpr glm::vec3 kShadowTarget{0.0f, 0.0f, 0.0f};
+
+        glm::mat4 ComputeLightSpaceMatrix(const DirectionalLight &light) {
+            const glm::vec3 direction = glm::normalize(light.Direction);
+            const glm::vec3 eye = kShadowTarget - direction * kShadowDistance;
+
+            // glm::lookAt's up vector must not be parallel to (eye -
+            // target). DirectionalLight's own default Direction, straight
+            // down, is exactly that degenerate case against the usual
+            // world-up — fall back to a different axis whenever direction
+            // is nearly vertical.
+            glm::vec3 up{0.0f, 1.0f, 0.0f};
+            if (glm::abs(glm::dot(direction, up)) > 0.999f) {
+                up = glm::vec3(0.0f, 0.0f, 1.0f);
+            }
+
+            const glm::mat4 lightView = glm::lookAt(eye, kShadowTarget, up);
+            const glm::mat4 lightProjection = glm::ortho(
+                -kShadowOrthoHalfExtent, kShadowOrthoHalfExtent,
+                -kShadowOrthoHalfExtent, kShadowOrthoHalfExtent,
+                kShadowNearPlane, kShadowFarPlane);
+
+            return lightProjection * lightView;
+        }
+    }
+
     Renderer::Renderer(Window &window)
         : m_window(&window), m_device(std::make_unique<GPUDevice>()) {
         SDL_Log(
@@ -46,7 +82,20 @@ namespace Engine {
             "Assets/Shaders/Compiled/Mesh.frag.msl",
             SDL_GPU_SHADERSTAGE_FRAGMENT,
             2,  // numUniformBuffers: buffer(0) LightUniformBlock, buffer(1) MaterialUniformBlock
-            1); // numSamplers
+            2); // numSamplers: sampler(0) diffuse, sampler(1) shadow map
+
+        const Shader shadowVertexShader(
+            m_device->Get(),
+            "Assets/Shaders/Compiled/Shadow.vert.msl",
+            SDL_GPU_SHADERSTAGE_VERTEX,
+            1); // buffer(0): light-space MVP
+
+        const Shader shadowFragmentShader(
+            m_device->Get(),
+            "Assets/Shaders/Compiled/Shadow.frag.msl",
+            SDL_GPU_SHADERSTAGE_FRAGMENT,
+            0,  // depth-only: no uniform buffers
+            0); // depth-only: no samplers
 
         const SDL_GPUTextureFormat colorFormat = SDL_GetGPUSwapchainTextureFormat(
             m_device->Get(),
@@ -66,6 +115,10 @@ namespace Engine {
             m_device->Get(),
             SDL_GPU_FILTER_LINEAR,
             SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
+
+        m_shadowMap = std::make_unique<ShadowMap>(m_device->Get(), kShadowMapSize);
+        m_shadowPipeline = std::make_unique<Pipeline>(
+            m_device->Get(), ShadowMap::kFormat, shadowVertexShader, shadowFragmentShader);
 
         m_debugUI = std::make_unique<DebugUI>(*m_window, m_device->Get(), colorFormat);
     }
@@ -140,11 +193,41 @@ namespace Engine {
         if (!m_commandBuffer || !m_swapchainTexture)
             return;
 
-        MainPass(scene);
+        entt::registry &registry = scene.Registry();
+        const auto lightView = registry.view<DirectionalLight>();
+        const DirectionalLight &light = registry.get<DirectionalLight>(*lightView.begin());
+        const glm::mat4 lightSpaceMatrix = ComputeLightSpaceMatrix(light);
+
+        ShadowPass(scene, lightSpaceMatrix);
+        MainPass(scene, lightSpaceMatrix);
         UIPass(scene, mode);
     }
 
-    void Renderer::MainPass(Scene &scene) {
+    void Renderer::ShadowPass(Scene &scene, const glm::mat4 &lightSpaceMatrix) {
+        entt::registry &registry = scene.Registry();
+
+        SDL_GPUDepthStencilTargetInfo shadowDepthTarget{};
+        shadowDepthTarget.texture = m_shadowMap->GetTexture();
+        shadowDepthTarget.clear_depth = 1.0f;
+        shadowDepthTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+        // MainPass samples this texture right after ShadowPass ends — the
+        // written depth must survive past this render pass, unlike the main
+        // depth texture (STORE_OP_DONT_CARE there, nothing reads it back).
+        shadowDepthTarget.store_op = SDL_GPU_STOREOP_STORE;
+        shadowDepthTarget.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+        shadowDepthTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
+        SDL_GPURenderPass *shadowRenderPass =
+                SDL_BeginGPURenderPass(m_commandBuffer, nullptr, 0, &shadowDepthTarget);
+
+        SDL_BindGPUGraphicsPipeline(shadowRenderPass, m_shadowPipeline->Get());
+
+        ShadowSystem(registry, m_commandBuffer, shadowRenderPass, lightSpaceMatrix);
+
+        SDL_EndGPURenderPass(shadowRenderPass);
+    }
+
+    void Renderer::MainPass(Scene &scene, const glm::mat4 &lightSpaceMatrix) {
         SDL_GPUColorTargetInfo colorTarget{};
         colorTarget.texture = m_swapchainTexture;
 
@@ -210,6 +293,7 @@ namespace Engine {
             glm::vec4 SunColor;
             glm::vec4 ViewPosition;
             glm::vec4 SunParams; // x: ambient, y: point light count, z: spot light count, w: unused
+            glm::mat4 LightSpaceMatrix;
             PointLightData PointLights[kMaxPointLights];
             SpotLightData SpotLights[kMaxSpotLights];
         };
@@ -218,6 +302,7 @@ namespace Engine {
         lightUniform.SunDirection = glm::vec4(light.Direction, 0.0f);
         lightUniform.SunColor = glm::vec4(light.Color, 0.0f);
         lightUniform.ViewPosition = glm::vec4(camera.GetPosition(), 0.0f);
+        lightUniform.LightSpaceMatrix = lightSpaceMatrix;
 
         int pointLightCount = 0;
         for (auto [entity, transform, pointLight] : registry.view<Transform, PointLight>().each()) {
@@ -253,6 +338,11 @@ namespace Engine {
             static_cast<float>(spotLightCount), 0.0f);
 
         SDL_PushGPUFragmentUniformData(m_commandBuffer, 0, &lightUniform, sizeof(lightUniform));
+
+        SDL_GPUTextureSamplerBinding shadowBinding{};
+        shadowBinding.texture = m_shadowMap->GetTexture();
+        shadowBinding.sampler = m_shadowMap->GetSampler();
+        SDL_BindGPUFragmentSamplers(m_renderPass, 1, &shadowBinding, 1);
 
         RenderSystem(registry, m_commandBuffer, m_renderPass, viewProjection);
 
