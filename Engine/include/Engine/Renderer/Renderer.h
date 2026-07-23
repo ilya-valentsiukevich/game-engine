@@ -17,6 +17,8 @@ namespace Engine {
     class Pipeline;
     class Mesh;
     class Camera;
+    class Texture;
+    class Sampler;
 
     class Renderer {
     public:
@@ -50,6 +52,8 @@ namespace Engine {
 
         std::unique_ptr<Pipeline> m_pipeline;
         std::unique_ptr<Mesh> m_mesh;
+        std::unique_ptr<Texture> m_texture;
+        std::unique_ptr<Sampler> m_sampler;
 
         float m_rotationAngle = 0.0f;
 

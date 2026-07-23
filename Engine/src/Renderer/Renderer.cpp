@@ -9,6 +9,8 @@
 #include <Engine/Renderer/Mesh.h>
 #include <Engine/Renderer/CubePrimitive.h>
 #include <Engine/Renderer/Camera.h>
+#include <Engine/Renderer/Texture.h>
+#include <Engine/Renderer/Sampler.h>
 #include <Engine/Window/Window.h>
 
 #include <glm/glm.hpp>
@@ -41,7 +43,9 @@ namespace Engine {
         const Shader fragmentShader(
             m_device->Get(),
             "Assets/Shaders/Compiled/Cube.frag.msl",
-            SDL_GPU_SHADERSTAGE_FRAGMENT);
+            SDL_GPU_SHADERSTAGE_FRAGMENT,
+            0,  // numUniformBuffers
+            1); // numSamplers
 
         const SDL_GPUTextureFormat colorFormat = SDL_GetGPUSwapchainTextureFormat(
             m_device->Get(),
@@ -77,6 +81,14 @@ namespace Engine {
 
         m_mesh = std::make_unique<Mesh>(
             m_device->Get(), std::span(kCubeVertices), std::span(kCubeIndices));
+
+        m_texture = std::make_unique<Texture>(
+            m_device->Get(), "Assets/Textures/crate.png");
+
+        m_sampler = std::make_unique<Sampler>(
+            m_device->Get(),
+            SDL_GPU_FILTER_LINEAR,
+            SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
     }
 
     bool Renderer::BeginFrame() {
@@ -160,8 +172,9 @@ namespace Engine {
         if (!m_device)
             return;
 
-        // m_depthTexture/m_mesh/m_pipeline release themselves via their own
-        // destructors (declared after m_device, so they run first).
+        // m_depthTexture/m_pipeline/m_mesh/m_texture/m_sampler release
+        // themselves via their own destructors (declared after m_device, so
+        // they run first).
         // m_device itself is destroyed last.
         SDL_ReleaseWindowFromGPUDevice(
             m_device->Get(),
@@ -178,6 +191,11 @@ namespace Engine {
             return;
 
         SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline->Get());
+
+        SDL_GPUTextureSamplerBinding textureSamplerBinding{};
+        textureSamplerBinding.texture = m_texture->Get();
+        textureSamplerBinding.sampler = m_sampler->Get();
+        SDL_BindGPUFragmentSamplers(m_renderPass, 0, &textureSamplerBinding, 1);
 
         int windowWidth = 0;
         int windowHeight = 0;
