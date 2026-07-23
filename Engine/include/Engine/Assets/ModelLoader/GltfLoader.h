@@ -10,23 +10,23 @@
 #include <vector>
 
 namespace Engine {
-    // One glTF "primitive" — the smallest drawable unit in the format (one
-    // material, one triangle list, see M5 §1.4) — already converted into
-    // this engine's own Vertex layout and Uint16 index type, ready to hand
-    // to Mesh's constructor unchanged.
+    // One glTF primitive: one material, one triangle list, already
+    // converted into this engine's own Vertex layout and Uint16 indices.
     struct GltfPrimitive {
         std::vector<Vertex> vertices;
         std::vector<Uint16> indices;
 
-        // Resolved relative to the .gltf file's own directory. Empty if the
-        // primitive has no pbrMetallicRoughness.baseColorTexture.
+        // At most one of these is set: the base color image is either an
+        // external file (baseColorTexturePath) or embedded in the glTF/GLB
+        // binary chunk (baseColorTextureData). Both empty means the
+        // primitive has no base color texture.
         std::filesystem::path baseColorTexturePath;
+        std::vector<unsigned char> baseColorTextureData;
     };
 
-    // Parses a glTF 2.0 file (separate .gltf + .bin + textures form, see M5
-    // §1.6) via cgltf and flattens every triangle-list primitive of every
-    // mesh into a GltfPrimitive. Does not walk the scene graph (see M5
-    // §1.4, "что дальше") — fine for a single static model at the origin.
+    // Parses a glTF 2.0 file via cgltf and flattens every triangle-list
+    // primitive of every mesh into a GltfPrimitive. Ignores node transforms
+    // — every primitive comes back in its own local mesh space.
     class GltfLoader {
     public:
         static std::vector<GltfPrimitive> Load(const std::filesystem::path &path);

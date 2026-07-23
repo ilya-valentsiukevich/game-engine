@@ -12,6 +12,12 @@ namespace Engine {
         : m_baseColorTexture(device, baseColorTexturePath), m_sampler(&sampler) {
     }
 
+    Material::Material(SDL_GPUDevice *device,
+                        std::span<const unsigned char> baseColorTextureData,
+                        const Sampler &sampler)
+        : m_baseColorTexture(device, baseColorTextureData), m_sampler(&sampler) {
+    }
+
     void Material::Bind(SDL_GPURenderPass *renderPass) const {
         SDL_GPUTextureSamplerBinding binding{};
         binding.texture = m_baseColorTexture.Get();

@@ -8,16 +8,14 @@
 
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
-#include <array>
 #include <memory>
 
 namespace Engine {
     class GPUDevice;
     class Window;
     class Pipeline;
-    class Mesh;
+    class Model;
     class Camera;
-    class Texture;
     class Sampler;
 
     class Renderer {
@@ -51,18 +49,10 @@ namespace Engine {
         SDL_GPURenderPass *m_renderPass = nullptr;
 
         std::unique_ptr<Pipeline> m_pipeline;
-        std::unique_ptr<Mesh> m_mesh;
-        std::unique_ptr<Texture> m_texture;
         std::unique_ptr<Sampler> m_sampler;
+        std::unique_ptr<Model> m_model;
 
         float m_rotationAngle = 0.0f;
-
-        std::array<glm::vec3, 5> m_cubePositions{
-            glm::vec3{0.0f, 0.0f, 0.0f},
-            glm::vec3{3.0f, 0.0f, 0.0f},
-            glm::vec3{-3.0f, 0.0f, 0.0f},
-            glm::vec3{0.0f, 0.0f, -4.0f},
-            glm::vec3{0.0f, 0.0f, 4.0f},
-        };
+        glm::vec3 m_modelPosition{0.0f, 0.0f, 0.0f};
     };
 }

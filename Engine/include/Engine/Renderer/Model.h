@@ -15,13 +15,13 @@ namespace Engine {
     class Sampler;
 
     // A model loaded from a glTF file: one (Mesh, Material) pair per glTF
-    // primitive (see M5 §1.4). Flat list, no scene graph/node hierarchy —
-    // fine for a single static object at the origin, the scope of M5.
+    // primitive, as a flat list — no scene graph/node hierarchy.
     class Model {
     public:
         Model(SDL_GPUDevice *device,
               const std::filesystem::path &path,
               const Sampler &sampler);
+        ~Model();
 
         Model(const Model &) = delete;
         Model &operator=(const Model &) = delete;
@@ -29,6 +29,9 @@ namespace Engine {
         void Draw(SDL_GPURenderPass *renderPass) const;
 
     private:
+        // ~Model() must be defined in Model.cpp (not defaulted here): it
+        // implicitly destroys every MeshPart's unique_ptr<Mesh>/<Material>,
+        // which needs their complete types — only forward-declared above.
         struct MeshPart {
             std::unique_ptr<Mesh> mesh;
             std::unique_ptr<Material> material;

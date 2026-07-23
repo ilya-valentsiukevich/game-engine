@@ -29,6 +29,27 @@ namespace Engine {
                     path.string(), stbi_failure_reason()));
         }
 
+        UploadPixels(device, pixels, width, height); // frees pixels itself
+    }
+
+    Texture::Texture(SDL_GPUDevice *device, std::span<const unsigned char> encodedImageData) {
+        int width = 0;
+        int height = 0;
+        int sourceChannels = 0;
+
+        stbi_uc *pixels = stbi_load_from_memory(
+            encodedImageData.data(), static_cast<int>(encodedImageData.size()),
+            &width, &height, &sourceChannels, 4);
+
+        if (!pixels) {
+            throw std::runtime_error(
+                std::format("Failed to decode embedded texture: {}", stbi_failure_reason()));
+        }
+
+        UploadPixels(device, pixels, width, height); // frees pixels itself
+    }
+
+    void Texture::UploadPixels(SDL_GPUDevice *device, unsigned char *pixels, int width, int height) {
         const Uint32 pixelDataSize =
                 static_cast<Uint32>(width) * static_cast<Uint32>(height) * 4;
 

@@ -7,19 +7,22 @@
 #include <Engine/Renderer/Texture.h>
 
 #include <filesystem>
+#include <span>
 
 namespace Engine {
     class Sampler;
 
-    // Pairs a base-color Texture with the (shared, non-owning) Sampler used
-    // to read it — glTF's PBR metallic-roughness material has several more
-    // texture slots (metallic-roughness, normal, occlusion, emissive), all
-    // ignored for now since nothing in the engine shades with them yet
-    // (see M5 §1.4 and "что дальше").
+    // Pairs a base-color texture with a shared, non-owning Sampler.
     class Material {
     public:
+        // Base color image is an external file.
         Material(SDL_GPUDevice *device,
                   const std::filesystem::path &baseColorTexturePath,
+                  const Sampler &sampler);
+
+        // Base color image is already in memory (e.g. embedded in a .glb).
+        Material(SDL_GPUDevice *device,
+                  std::span<const unsigned char> baseColorTextureData,
                   const Sampler &sampler);
 
         Material(const Material &) = delete;

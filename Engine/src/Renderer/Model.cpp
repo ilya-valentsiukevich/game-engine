@@ -20,21 +20,26 @@ namespace Engine {
         m_parts.reserve(primitives.size());
 
         for (const GltfPrimitive &primitive : primitives) {
-            if (primitive.baseColorTexturePath.empty()) {
-                throw std::runtime_error(std::format(
-                    "Primitive in model ({}) has no base color texture — see M5 "
-                    "§1.6 (Blender: Image Texture node in Base Color)", path.string()));
-            }
-
             MeshPart part;
             part.mesh = std::make_unique<Mesh>(
                 device, std::span(primitive.vertices), std::span(primitive.indices));
-            part.material = std::make_unique<Material>(
-                device, primitive.baseColorTexturePath, sampler);
+
+            if (!primitive.baseColorTexturePath.empty()) {
+                part.material = std::make_unique<Material>(
+                    device, primitive.baseColorTexturePath, sampler);
+            } else if (!primitive.baseColorTextureData.empty()) {
+                part.material = std::make_unique<Material>(
+                    device, std::span(primitive.baseColorTextureData), sampler);
+            } else {
+                throw std::runtime_error(std::format(
+                    "Primitive in model ({}) has no base color texture", path.string()));
+            }
 
             m_parts.push_back(std::move(part));
         }
     }
+
+    Model::~Model() = default;
 
     void Model::Draw(SDL_GPURenderPass *renderPass) const {
         for (const MeshPart &part : m_parts) {

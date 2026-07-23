@@ -12,10 +12,8 @@
 
 namespace Engine {
     namespace {
-        // cgltf_data is a plain C struct owned by us after cgltf_parse_file
-        // succeeds — cgltf_free() must run even if something below throws,
-        // same reasoning as every GPUResource in this engine (M2), just for
-        // a non-GPU C API.
+        // cgltf_data is a plain C struct — cgltf_free() must run even if
+        // something below throws before Load() returns normally.
         struct CgltfDataGuard {
             cgltf_data *data = nullptr;
 
@@ -25,10 +23,9 @@ namespace Engine {
             }
         };
 
-        // glTF URIs are percent-encoded (RFC 3986) — a texture filename
-        // with a space becomes "%20" in the .gltf JSON; without decoding,
-        // the path we hand to Texture/stb_image won't match any file on
-        // disk.
+        // glTF URIs are percent-encoded (RFC 3986): a filename with a space
+        // becomes "%20" in the JSON, which won't match any file on disk
+        // unless decoded first.
         std::string DecodeUri(std::string_view uri) {
             std::string result;
             result.reserve(uri.size());
@@ -47,22 +44,31 @@ namespace Engine {
             return result;
         }
 
-        std::filesystem::path FindBaseColorTexturePath(
-            const cgltf_primitive &primitive, const std::filesystem::path &modelDir) {
+        void FillBaseColorTexture(
+            const cgltf_primitive &primitive, const std::filesystem::path &modelDir,
+            GltfPrimitive &out) {
             const cgltf_material *material = primitive.material;
 
             if (!material || !material->has_pbr_metallic_roughness)
-                return {};
+                return;
 
             const cgltf_texture *texture =
                     material->pbr_metallic_roughness.base_color_texture.texture;
 
-            // texture->image->uri is null for GLB-embedded/data-URI images
-            // (see M5 §1.6, "что дальше") — treated the same as "no texture".
-            if (!texture || !texture->image || !texture->image->uri)
-                return {};
+            if (!texture || !texture->image)
+                return;
 
-            return modelDir / DecodeUri(texture->image->uri);
+            const cgltf_image &image = *texture->image;
+
+            if (image.uri) {
+                // Assumes a relative file path; a data:-URI (inline base64)
+                // isn't handled here.
+                out.baseColorTexturePath = modelDir / DecodeUri(image.uri);
+            } else if (image.buffer_view) {
+                const uint8_t *data = cgltf_buffer_view_data(image.buffer_view);
+                const cgltf_size size = image.buffer_view->size;
+                out.baseColorTextureData.assign(data, data + size);
+            }
         }
     }
 
@@ -96,7 +102,7 @@ namespace Engine {
                 const cgltf_primitive &primitive = mesh.primitives[primIndex];
 
                 if (primitive.type != cgltf_primitive_type_triangles)
-                    continue; // Pipeline only draws triangle lists (Pipeline.cpp)
+                    continue;
 
                 const cgltf_accessor *positionAccessor =
                         cgltf_find_accessor(&primitive, cgltf_attribute_type_position, 0);
@@ -123,10 +129,6 @@ namespace Engine {
                             "Failed to read POSITION[{}] ({})", i, path.string()));
                     }
 
-                    // No UV set on this primitive (Blender export without an
-                    // unwrap, see M5 §1.5) — (0,0) instead of failing, since
-                    // a model can still be meaningfully loaded/inspected
-                    // without a texture.
                     if (texCoordAccessor) {
                         cgltf_accessor_read_float(texCoordAccessor, i, out.vertices[i].TexCoord, 2);
                     } else {
@@ -142,15 +144,14 @@ namespace Engine {
 
                     if (index > 0xFFFFu) {
                         throw std::runtime_error(std::format(
-                            "glTF vertex index {} doesn't fit Uint16 ({}) — see M5 "
-                            "\"что дальше\" about 32-bit indices",
+                            "glTF vertex index {} doesn't fit Uint16 ({})",
                             index, path.string()));
                     }
 
                     out.indices.push_back(static_cast<Uint16>(index));
                 }
 
-                out.baseColorTexturePath = FindBaseColorTexturePath(primitive, modelDir);
+                FillBaseColorTexture(primitive, modelDir, out);
 
                 primitives.push_back(std::move(out));
             }
