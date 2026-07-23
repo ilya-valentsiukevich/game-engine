@@ -6,11 +6,13 @@
 #include <Engine/Renderer/GPUDevice.h>
 #include <Engine/Renderer/Shader.h>
 #include <Engine/Renderer/Pipeline.h>
-#include <Engine/Renderer/Buffer.h>
-#include <Engine/Renderer/Vertex.h>
+#include <Engine/Renderer/Mesh.h>
+#include <Engine/Renderer/CubePrimitive.h>
 #include <Engine/Window/Window.h>
 
-#include <array>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <format>
 #include <span>
 
@@ -31,12 +33,13 @@ namespace Engine {
 
         const Shader vertexShader(
             m_device->Get(),
-            "Assets/Shaders/Compiled/Triangle.vert.msl",
-            SDL_GPU_SHADERSTAGE_VERTEX);
+            "Assets/Shaders/Compiled/Cube.vert.msl",
+            SDL_GPU_SHADERSTAGE_VERTEX,
+            1);
 
         const Shader fragmentShader(
             m_device->Get(),
-            "Assets/Shaders/Compiled/Triangle.frag.msl",
+            "Assets/Shaders/Compiled/Cube.frag.msl",
             SDL_GPU_SHADERSTAGE_FRAGMENT);
 
         const SDL_GPUTextureFormat colorFormat = SDL_GetGPUSwapchainTextureFormat(
@@ -71,14 +74,8 @@ namespace Engine {
         m_pipeline = std::make_unique<Pipeline>(
             m_device->Get(), colorFormat, depthFormat, vertexShader, fragmentShader);
 
-        constexpr std::array<Vertex, 3> vertices{
-            Vertex{{0.0f, 0.5f}, {1.0f, 0.0f, 0.0f}},
-            Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-            Vertex{{-0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
-        };
-
-        m_vertexBuffer = std::make_unique<Buffer<Vertex> >(
-            m_device->Get(), SDL_GPU_BUFFERUSAGE_VERTEX, std::span(vertices));
+        m_mesh = std::make_unique<Mesh>(
+            m_device->Get(), std::span(kCubeVertices), std::span(kCubeIndices));
     }
 
     bool Renderer::BeginFrame() {
@@ -162,12 +159,17 @@ namespace Engine {
         if (!m_device)
             return;
 
-        // m_depthTexture/m_vertexBuffer/m_pipeline release themselves via
-        // their own destructors (declared after m_device, so they run
-        // first). m_device itself is destroyed last.
+        // m_depthTexture/m_mesh/m_pipeline release themselves via their own
+        // destructors (declared after m_device, so they run first).
+        // m_device itself is destroyed last.
         SDL_ReleaseWindowFromGPUDevice(
             m_device->Get(),
             m_window->GetNativeWindow());
+    }
+
+    void Renderer::Update(float deltaTime) {
+        constexpr float kRotationSpeed = glm::radians(90.0f); // rad/sec
+        m_rotationAngle += kRotationSpeed * deltaTime;
     }
 
     void Renderer::Render() {
@@ -176,12 +178,21 @@ namespace Engine {
 
         SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline->Get());
 
-        SDL_GPUBufferBinding binding{};
-        binding.buffer = m_vertexBuffer->Get();
-        binding.offset = 0;
+        const glm::mat4 model = glm::rotate(
+            glm::mat4(1.0f), m_rotationAngle, glm::vec3(0.5f, 1.0f, 0.0f));
 
-        SDL_BindGPUVertexBuffers(m_renderPass, 0, &binding, 1);
+        const glm::mat4 view = glm::lookAt(
+            glm::vec3(0.0f, 1.5f, 3.0f),
+            glm::vec3(0.0f, 0.0f, 0.0f),
+            glm::vec3(0.0f, 1.0f, 0.0f));
 
-        SDL_DrawGPUPrimitives(m_renderPass, m_vertexBuffer->Count(), 1, 0, 0);
+        const glm::mat4 projection = glm::perspective(
+            glm::radians(60.0f), 1280.0f / 720.0f, 0.1f, 100.0f);
+
+        const glm::mat4 mvp = projection * view * model;
+
+        SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
+
+        m_mesh->Draw(m_renderPass);
     }
 }
