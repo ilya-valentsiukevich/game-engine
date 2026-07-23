@@ -16,6 +16,12 @@
 
 namespace Engine {
     namespace {
+        // Blinn-Phong-specific factors glTF's pbrMetallicRoughness material
+        // doesn't carry — every loaded Model gets the same starting point
+        // until a per-material override mechanism exists.
+        constexpr float kDefaultSpecularStrength = 0.5f;
+        constexpr float kDefaultShininess = 32.0f;
+
         AssetHandle<Texture> LoadBaseColorTexture(
             SDL_GPUDevice *device, const GltfPrimitive &primitive, AssetManager &assets) {
             // Base color is the texture the fragment shader multiplies
@@ -69,7 +75,9 @@ namespace Engine {
                 primitive.baseColorFactor[0], primitive.baseColorFactor[1],
                 primitive.baseColorFactor[2], primitive.baseColorFactor[3]);
 
-            part.material = std::make_unique<Material>(std::move(baseColorTexture), baseColorFactor, sampler);
+            part.material = std::make_unique<Material>(
+                std::move(baseColorTexture), baseColorFactor, sampler,
+                kDefaultSpecularStrength, kDefaultShininess);
 
             m_parts.push_back(std::move(part));
         }

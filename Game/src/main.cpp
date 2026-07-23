@@ -28,6 +28,24 @@ namespace {
         registry.emplace<Engine::DirectionalLight>(lightEntity);
         registry.emplace<Engine::Name>(lightEntity, "Sun");
 
+        const entt::entity torchOneEntity = registry.create();
+        Engine::Transform &torchOneTransform = registry.emplace<Engine::Transform>(torchOneEntity);
+        torchOneTransform.Position = glm::vec3(1.5f, 1.2f, 1.5f);
+        registry.emplace<Engine::PointLight>(torchOneEntity, glm::vec3(1.0f, 0.55f, 0.2f));
+        registry.emplace<Engine::Name>(torchOneEntity, "Torch 1");
+
+        const entt::entity torchTwoEntity = registry.create();
+        Engine::Transform &torchTwoTransform = registry.emplace<Engine::Transform>(torchTwoEntity);
+        torchTwoTransform.Position = glm::vec3(-1.5f, 1.2f, -1.5f);
+        registry.emplace<Engine::PointLight>(torchTwoEntity, glm::vec3(0.2f, 0.4f, 1.0f));
+        registry.emplace<Engine::Name>(torchTwoEntity, "Torch 2");
+
+        const entt::entity spotlightEntity = registry.create();
+        Engine::Transform &spotlightTransform = registry.emplace<Engine::Transform>(spotlightEntity);
+        spotlightTransform.Position = glm::vec3(0.0f, 4.0f, 0.0f);
+        registry.emplace<Engine::SpotLight>(spotlightEntity, glm::vec3(0.0f, -1.0f, 0.0f));
+        registry.emplace<Engine::Name>(spotlightEntity, "Spotlight");
+
         struct DioramaCharacter {
             const char *name;
             const char *modelPath;

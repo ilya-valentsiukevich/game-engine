@@ -13,6 +13,7 @@
 #include <Engine/Window/Window.h>
 #include <Engine/ECS/Components.h>
 #include <Engine/ECS/Systems.h>
+#include <Engine/ECS/Transform.h>
 #include <Engine/Scene/Scene.h>
 
 #include <glm/glm.hpp>
@@ -190,19 +191,66 @@ namespace Engine {
         const auto lightView = registry.view<DirectionalLight>();
         const DirectionalLight &light = registry.get<DirectionalLight>(*lightView.begin());
 
-        struct LightUniformBlock {
-            glm::vec4 Direction;
+        struct PointLightData {
+            glm::vec4 Position;
             glm::vec4 Color;
-            glm::vec4 ViewPosition;
-            glm::vec4 Params; // x: ambient, y: specular, z: shininess, w: unused
+            glm::vec4 Attenuation;
         };
 
-        const LightUniformBlock lightUniform{
-            glm::vec4(light.Direction, 0.0f),
-            glm::vec4(light.Color, 0.0f),
-            glm::vec4(camera.GetPosition(), 0.0f),
-            glm::vec4(light.AmbientStrength, light.SpecularStrength, light.Shininess, 0.0f),
+        struct SpotLightData {
+            glm::vec4 Position;
+            glm::vec4 Direction;
+            glm::vec4 Color;
+            glm::vec4 Attenuation;
+            glm::vec4 ConeAngles;
         };
+
+        struct LightUniformBlock {
+            glm::vec4 SunDirection;
+            glm::vec4 SunColor;
+            glm::vec4 ViewPosition;
+            glm::vec4 SunParams; // x: ambient, y: point light count, z: spot light count, w: unused
+            PointLightData PointLights[kMaxPointLights];
+            SpotLightData SpotLights[kMaxSpotLights];
+        };
+
+        LightUniformBlock lightUniform{};
+        lightUniform.SunDirection = glm::vec4(light.Direction, 0.0f);
+        lightUniform.SunColor = glm::vec4(light.Color, 0.0f);
+        lightUniform.ViewPosition = glm::vec4(camera.GetPosition(), 0.0f);
+
+        int pointLightCount = 0;
+        for (auto [entity, transform, pointLight] : registry.view<Transform, PointLight>().each()) {
+            if (pointLightCount >= kMaxPointLights)
+                break; // extra point lights beyond kMaxPointLights are silently ignored this frame.
+
+            lightUniform.PointLights[pointLightCount] = PointLightData{
+                glm::vec4(transform.Position, 0.0f),
+                glm::vec4(pointLight.Color, 0.0f),
+                glm::vec4(pointLight.Constant, pointLight.Linear, pointLight.Quadratic, 0.0f),
+            };
+            ++pointLightCount;
+        }
+
+        int spotLightCount = 0;
+        for (auto [entity, transform, spotLight] : registry.view<Transform, SpotLight>().each()) {
+            if (spotLightCount >= kMaxSpotLights)
+                break;
+
+            lightUniform.SpotLights[spotLightCount] = SpotLightData{
+                glm::vec4(transform.Position, 0.0f),
+                glm::vec4(spotLight.Direction, 0.0f),
+                glm::vec4(spotLight.Color, 0.0f),
+                glm::vec4(spotLight.Constant, spotLight.Linear, spotLight.Quadratic, 0.0f),
+                glm::vec4(glm::cos(glm::radians(spotLight.InnerConeAngleDegrees)),
+                          glm::cos(glm::radians(spotLight.OuterConeAngleDegrees)), 0.0f, 0.0f),
+            };
+            ++spotLightCount;
+        }
+
+        lightUniform.SunParams = glm::vec4(
+            light.AmbientStrength, static_cast<float>(pointLightCount),
+            static_cast<float>(spotLightCount), 0.0f);
 
         SDL_PushGPUFragmentUniformData(m_commandBuffer, 0, &lightUniform, sizeof(lightUniform));
 
