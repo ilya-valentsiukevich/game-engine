@@ -44,7 +44,17 @@ namespace Engine {
 
         void ProcessDebugUIEvent(const SDL_Event &event);
 
+        // Recreates every render target sized to the window (currently:
+        // the depth texture) after SDL reports the window's pixel size
+        // changed. Safe to call between frames only — never while a render
+        // pass referencing the old target is still open.
+        void OnWindowResized();
+
     private:
+        static constexpr SDL_GPUTextureFormat kDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+
+        void CreateDepthTexture(Uint32 width, Uint32 height);
+
         Window *m_window = nullptr;
 
         // Declaration order matters: members below are destroyed before

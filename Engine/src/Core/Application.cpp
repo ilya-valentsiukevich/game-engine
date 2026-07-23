@@ -62,6 +62,10 @@ namespace Engine {
                         m_input.OnMouseMotion(event.motion.xrel, event.motion.yrel);
                     break;
 
+                case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                    m_renderer.OnWindowResized();
+                    break;
+
                 case SDL_EVENT_KEY_DOWN:
                     if (event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat) {
                         m_mode = (m_mode == AppMode::Game) ? AppMode::Debug : AppMode::Game;

@@ -56,33 +56,15 @@ namespace Engine {
             m_device->Get(),
             m_window->GetNativeWindow());
 
-        constexpr SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
-
         int windowWidth = 0;
         int windowHeight = 0;
         SDL_GetWindowSizeInPixels(
             m_window->GetNativeWindow(), &windowWidth, &windowHeight);
 
-        SDL_GPUTextureCreateInfo depthCreateInfo{};
-        depthCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-        depthCreateInfo.format = depthFormat;
-        depthCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
-        depthCreateInfo.width = static_cast<Uint32>(windowWidth);
-        depthCreateInfo.height = static_cast<Uint32>(windowHeight);
-        depthCreateInfo.layer_count_or_depth = 1;
-        depthCreateInfo.num_levels = 1;
-        depthCreateInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
-
-        m_depthTexture = GPUTextureHandle(
-            m_device->Get(), SDL_CreateGPUTexture(m_device->Get(), &depthCreateInfo));
-
-        if (!m_depthTexture) {
-            throw std::runtime_error(
-                std::format("Failed to create depth texture: {}", SDL_GetError()));
-        }
+        CreateDepthTexture(static_cast<Uint32>(windowWidth), static_cast<Uint32>(windowHeight));
 
         m_pipeline = std::make_unique<Pipeline>(
-            m_device->Get(), colorFormat, depthFormat, vertexShader, fragmentShader);
+            m_device->Get(), colorFormat, kDepthFormat, vertexShader, fragmentShader);
 
         m_sampler = std::make_unique<Sampler>(
             m_device->Get(),
@@ -308,5 +290,40 @@ namespace Engine {
 
     void Renderer::ProcessDebugUIEvent(const SDL_Event &event) {
         m_debugUI->ProcessEvent(event);
+    }
+
+    void Renderer::OnWindowResized() {
+        int windowWidth = 0;
+        int windowHeight = 0;
+        SDL_GetWindowSizeInPixels(m_window->GetNativeWindow(), &windowWidth, &windowHeight);
+
+        if (windowWidth <= 0 || windowHeight <= 0)
+            return;
+
+        CreateDepthTexture(static_cast<Uint32>(windowWidth), static_cast<Uint32>(windowHeight));
+    }
+
+    void Renderer::CreateDepthTexture(Uint32 width, Uint32 height) {
+        SDL_GPUTextureCreateInfo depthCreateInfo{};
+        depthCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+        depthCreateInfo.format = kDepthFormat;
+        depthCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+        depthCreateInfo.width = width;
+        depthCreateInfo.height = height;
+        depthCreateInfo.layer_count_or_depth = 1;
+        depthCreateInfo.num_levels = 1;
+        depthCreateInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+
+        // Assigning over the existing handle releases the old texture via
+        // SDL_ReleaseGPUTexture first — safe even if a previously submitted
+        // command buffer is still using it, SDL_gpu defers the actual
+        // GPU-side destruction until it's no longer in flight.
+        m_depthTexture = GPUTextureHandle(
+            m_device->Get(), SDL_CreateGPUTexture(m_device->Get(), &depthCreateInfo));
+
+        if (!m_depthTexture) {
+            throw std::runtime_error(
+                std::format("Failed to create depth texture: {}", SDL_GetError()));
+        }
     }
 }
