@@ -13,23 +13,7 @@
 
 namespace Engine {
     Texture::Texture(SDL_GPUDevice *device, const std::filesystem::path &path) {
-        int width = 0;
-        int height = 0;
-        int sourceChannels = 0;
-
-        // Force 4 channels (RGBA) regardless of the source file's actual
-        // channel count, since SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM below
-        // expects a tightly packed 4-byte-per-pixel layout.
-        stbi_uc *pixels = stbi_load(
-            path.string().c_str(), &width, &height, &sourceChannels, 4);
-
-        if (!pixels) {
-            throw std::runtime_error(
-                std::format("Failed to load texture ({}): {}",
-                    path.string(), stbi_failure_reason()));
-        }
-
-        UploadPixels(device, pixels, width, height); // frees pixels itself
+        Reload(device, path);
     }
 
     Texture::Texture(SDL_GPUDevice *device, std::span<const unsigned char> encodedImageData) {
@@ -44,6 +28,26 @@ namespace Engine {
         if (!pixels) {
             throw std::runtime_error(
                 std::format("Failed to decode embedded texture: {}", stbi_failure_reason()));
+        }
+
+        UploadPixels(device, pixels, width, height); // frees pixels itself
+    }
+
+    void Texture::Reload(SDL_GPUDevice *device, const std::filesystem::path &path) {
+        int width = 0;
+        int height = 0;
+        int sourceChannels = 0;
+
+        // Force 4 channels (RGBA) regardless of the source file's actual
+        // channel count, since SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM below
+        // expects a tightly packed 4-byte-per-pixel layout.
+        stbi_uc *pixels = stbi_load(
+            path.string().c_str(), &width, &height, &sourceChannels, 4);
+
+        if (!pixels) {
+            throw std::runtime_error(
+                std::format("Failed to load texture ({}): {}",
+                    path.string(), stbi_failure_reason()));
         }
 
         UploadPixels(device, pixels, width, height); // frees pixels itself

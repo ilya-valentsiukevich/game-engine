@@ -3,6 +3,7 @@
 //
 #pragma once
 
+#include <Engine/Assets/AssetManager.h>
 #include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Renderer/GPUResource.h>
 #include <Engine/Renderer/Light.h>
@@ -37,6 +38,10 @@ namespace Engine {
 
         void Render(const Camera &camera);
 
+        // Re-stats every cached asset (currently: Textures) and swaps in
+        // any that changed on disk since the last load or reload.
+        void ReloadChangedAssets();
+
     private:
         // Recursively draws node and every descendant that has an
         // AttachedModel, pushing the node's MVP and world (model) matrices
@@ -59,11 +64,15 @@ namespace Engine {
         std::unique_ptr<Pipeline> m_pipeline;
         std::unique_ptr<Sampler> m_sampler;
 
+        AssetManager m_assets;
+
         // One entry per diorama character (see constructor) — a vector of
-        // unique_ptr rather than a vector of Model keeps every Model's
+        // AssetHandle rather than a vector of Model keeps every Model's
         // address stable across reallocation, which SceneNode::AttachedModel
-        // pointers below depend on.
-        std::vector<std::unique_ptr<Model>> m_models;
+        // pointers below depend on. Backed by m_assets.Models, so placing
+        // the same character twice would share one Model instead of
+        // loading it twice.
+        std::vector<AssetHandle<Model>> m_models;
 
         Scene m_scene;
         // Non-owning — points at a node owned by m_scene's tree, kept

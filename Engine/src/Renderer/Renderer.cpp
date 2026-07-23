@@ -113,8 +113,13 @@ namespace Engine {
         for (int i = 0; i < kCharacterCount; ++i) {
             const DioramaCharacter &character = kDioramaCharacters[i];
 
-            m_models.push_back(std::make_unique<Model>(
-                m_device->Get(), character.modelPath, *m_sampler));
+            AssetHandle<Model> model = m_assets.Models.Load(
+                character.modelPath,
+                [this, path = std::filesystem::path(character.modelPath)] {
+                    return std::make_shared<Model>(m_device->Get(), path, *m_sampler, m_assets);
+                });
+
+            m_models.push_back(model);
 
             const float angle =
                     glm::radians(360.0f / static_cast<float>(kCharacterCount) * static_cast<float>(i));
@@ -124,7 +129,7 @@ namespace Engine {
                     glm::vec3(std::cos(angle) * kRadius, 0.0f, std::sin(angle) * kRadius);
             node->GetLocalTransform().Rotation =
                     glm::angleAxis(-angle, glm::vec3(0.0f, 1.0f, 0.0f));
-            node->AttachedModel = m_models.back().get();
+            node->AttachedModel = model.get();
 
             platform.AddChild(std::move(node));
         }
@@ -272,6 +277,10 @@ namespace Engine {
         SDL_PushGPUFragmentUniformData(m_commandBuffer, 0, &lightUniform, sizeof(lightUniform));
 
         DrawNode(m_scene.GetRoot(), viewProjection);
+    }
+
+    void Renderer::ReloadChangedAssets() {
+        m_assets.ReloadChanged();
     }
 
     void Renderer::DrawNode(const SceneNode &node, const glm::mat4 &viewProjection) {

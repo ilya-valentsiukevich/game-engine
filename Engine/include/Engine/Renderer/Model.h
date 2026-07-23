@@ -13,6 +13,7 @@ namespace Engine {
     class Mesh;
     class Material;
     class Sampler;
+    struct AssetManager;
 
     // A model loaded from a glTF file: one (Mesh, Material) pair per glTF
     // primitive, as a flat list — no scene graph/node hierarchy.
@@ -20,7 +21,8 @@ namespace Engine {
     public:
         Model(SDL_GPUDevice *device,
               const std::filesystem::path &path,
-              const Sampler &sampler);
+              const Sampler &sampler,
+              AssetManager &assets);
         ~Model();
 
         Model(const Model &) = delete;
