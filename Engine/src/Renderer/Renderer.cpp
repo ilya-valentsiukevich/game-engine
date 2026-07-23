@@ -8,6 +8,7 @@
 #include <Engine/Renderer/Pipeline.h>
 #include <Engine/Renderer/Mesh.h>
 #include <Engine/Renderer/CubePrimitive.h>
+#include <Engine/Renderer/Camera.h>
 #include <Engine/Window/Window.h>
 
 #include <glm/glm.hpp>
@@ -172,27 +173,31 @@ namespace Engine {
         m_rotationAngle += kRotationSpeed * deltaTime;
     }
 
-    void Renderer::Render() {
+    void Renderer::Render(const Camera &camera) {
         if (!m_renderPass)
             return;
 
         SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline->Get());
 
-        const glm::mat4 model = glm::rotate(
-            glm::mat4(1.0f), m_rotationAngle, glm::vec3(0.5f, 1.0f, 0.0f));
+        int windowWidth = 0;
+        int windowHeight = 0;
+        SDL_GetWindowSizeInPixels(m_window->GetNativeWindow(), &windowWidth, &windowHeight);
+        const float aspectRatio =
+                static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
 
-        const glm::mat4 view = glm::lookAt(
-            glm::vec3(0.0f, 1.5f, 3.0f),
-            glm::vec3(0.0f, 0.0f, 0.0f),
-            glm::vec3(0.0f, 1.0f, 0.0f));
+        const glm::mat4 view = camera.GetViewMatrix();
+        const glm::mat4 projection = camera.GetProjectionMatrix(aspectRatio);
 
-        const glm::mat4 projection = glm::perspective(
-            glm::radians(60.0f), 1280.0f / 720.0f, 0.1f, 100.0f);
+        for (const glm::vec3 &cubePosition : m_cubePositions) {
+            const glm::mat4 model =
+                    glm::translate(glm::mat4(1.0f), cubePosition) *
+                    glm::rotate(glm::mat4(1.0f), m_rotationAngle, glm::vec3(0.5f, 1.0f, 0.0f));
 
-        const glm::mat4 mvp = projection * view * model;
+            const glm::mat4 mvp = projection * view * model;
 
-        SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
+            SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
 
-        m_mesh->Draw(m_renderPass);
+            m_mesh->Draw(m_renderPass);
+        }
     }
 }

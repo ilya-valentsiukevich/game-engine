@@ -1,12 +1,14 @@
 add_library(Engine STATIC
         src/Core/Application.cpp
         src/Core/SDLContext.cpp
+        src/Core/Input.cpp
         src/Window/Window.cpp
         src/Renderer/Renderer.cpp
         src/Renderer/GPUDevice.cpp
         src/Renderer/Shader.cpp
         src/Renderer/Pipeline.cpp
         src/Renderer/Mesh.cpp
+        src/Renderer/Camera.cpp
         src/Assets/ShaderLoader/ShaderLoader.cpp
 )
 

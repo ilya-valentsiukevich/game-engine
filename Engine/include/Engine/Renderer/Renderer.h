@@ -3,15 +3,12 @@
 //
 #pragma once
 
-// SDL_gpu's clip space is left-handed with depth in [0, 1] (D3D12/Metal
-// convention), unlike glm's OpenGL-style defaults. Must be defined before
-// the first glm include anywhere in the project.
-#define GLM_FORCE_LEFT_HANDED
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-
+#include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Renderer/GPUResource.h>
 
 #include <SDL3/SDL.h>
+#include <glm/glm.hpp>
+#include <array>
 #include <memory>
 
 namespace Engine {
@@ -19,6 +16,7 @@ namespace Engine {
     class Window;
     class Pipeline;
     class Mesh;
+    class Camera;
 
     class Renderer {
     public:
@@ -34,7 +32,7 @@ namespace Engine {
 
         void Update(float deltaTime);
 
-        void Render();
+        void Render(const Camera &camera);
 
     private:
         Window *m_window = nullptr;
@@ -54,5 +52,13 @@ namespace Engine {
         std::unique_ptr<Mesh> m_mesh;
 
         float m_rotationAngle = 0.0f;
+
+        std::array<glm::vec3, 5> m_cubePositions{
+            glm::vec3{0.0f, 0.0f, 0.0f},
+            glm::vec3{3.0f, 0.0f, 0.0f},
+            glm::vec3{-3.0f, 0.0f, 0.0f},
+            glm::vec3{0.0f, 0.0f, -4.0f},
+            glm::vec3{0.0f, 0.0f, 4.0f},
+        };
     };
 }

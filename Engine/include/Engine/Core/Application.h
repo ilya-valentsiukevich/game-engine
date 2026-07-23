@@ -5,8 +5,10 @@
 #pragma once
 
 #include <Engine/Core/SDLContext.h>
+#include <Engine/Core/Input.h>
 #include <Engine/Window/Window.h>
 #include <Engine/Renderer/Renderer.h>
+#include <Engine/Renderer/Camera.h>
 
 namespace Engine {
     class Application {
@@ -36,5 +38,8 @@ namespace Engine {
         SDLContext m_sdl;
         Window m_window;
         Renderer m_renderer;
+
+        Camera m_camera;
+        Input m_input;
     };
 }
