@@ -5,6 +5,8 @@
 #include <Engine/Renderer/Model.h>
 #include <Engine/Renderer/Mesh.h>
 #include <Engine/Renderer/Material.h>
+#include <Engine/Renderer/Texture.h>
+#include <Engine/Assets/AssetManager.h>
 #include <Engine/Assets/ModelLoader/GltfLoader.h>
 
 #include <format>
@@ -12,9 +14,36 @@
 #include <stdexcept>
 
 namespace Engine {
+    namespace {
+        AssetHandle<Texture> LoadBaseColorTexture(
+            SDL_GPUDevice *device, const GltfPrimitive &primitive,
+            AssetCache<Texture> &textureCache) {
+            if (!primitive.baseColorTexturePath.empty()) {
+                return textureCache.Load(
+                    primitive.baseColorTexturePath,
+                    [device, path = primitive.baseColorTexturePath] {
+                        return std::make_shared<Texture>(device, path);
+                    },
+                    [device](Texture &texture, const std::filesystem::path &path) {
+                        texture.Reload(device, path);
+                    });
+            }
+
+            if (!primitive.baseColorTextureData.empty()) {
+                // No stable file path to key a cache entry (or a hot-reload)
+                // on — embedded data gets its own uncached Texture.
+                return std::make_shared<Texture>(
+                    device, std::span(primitive.baseColorTextureData));
+            }
+
+            return nullptr;
+        }
+    }
+
     Model::Model(SDL_GPUDevice *device,
                  const std::filesystem::path &path,
-                 const Sampler &sampler) {
+                 const Sampler &sampler,
+                 AssetManager &assets) {
         const std::vector<GltfPrimitive> primitives = GltfLoader::Load(path);
 
         m_parts.reserve(primitives.size());
@@ -24,16 +53,15 @@ namespace Engine {
             part.mesh = std::make_unique<Mesh>(
                 device, std::span(primitive.vertices), std::span(primitive.indices));
 
-            if (!primitive.baseColorTexturePath.empty()) {
-                part.material = std::make_unique<Material>(
-                    device, primitive.baseColorTexturePath, sampler);
-            } else if (!primitive.baseColorTextureData.empty()) {
-                part.material = std::make_unique<Material>(
-                    device, std::span(primitive.baseColorTextureData), sampler);
-            } else {
+            AssetHandle<Texture> baseColorTexture =
+                    LoadBaseColorTexture(device, primitive, assets.Textures);
+
+            if (!baseColorTexture) {
                 throw std::runtime_error(std::format(
                     "Primitive in model ({}) has no base color texture", path.string()));
             }
+
+            part.material = std::make_unique<Material>(std::move(baseColorTexture), sampler);
 
             m_parts.push_back(std::move(part));
         }
