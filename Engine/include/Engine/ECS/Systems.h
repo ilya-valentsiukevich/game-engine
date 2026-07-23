@@ -16,4 +16,11 @@ namespace Engine {
     // the vertex uniform, then calls Model::Draw().
     void RenderSystem(entt::registry &registry, SDL_GPUCommandBuffer *commandBuffer,
                        SDL_GPURenderPass *renderPass, const glm::mat4 &viewProjection);
+
+    // Draws every (Transform, MeshRenderer) entity's geometry into the
+    // shadow map's depth target, from the light's point of view — pushes
+    // lightSpaceMatrix * world as the vertex uniform, then calls
+    // Model::DrawDepthOnly().
+    void ShadowSystem(entt::registry &registry, SDL_GPUCommandBuffer *commandBuffer,
+                       SDL_GPURenderPass *renderPass, const glm::mat4 &lightSpaceMatrix);
 }

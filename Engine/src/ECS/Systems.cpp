@@ -45,4 +45,21 @@ namespace Engine {
             meshRenderer.Model->Draw(commandBuffer, renderPass);
         }
     }
+
+    void ShadowSystem(entt::registry &registry, SDL_GPUCommandBuffer *commandBuffer,
+                       SDL_GPURenderPass *renderPass, const glm::mat4 &lightSpaceMatrix) {
+        struct ShadowVertexUniformBlock {
+            glm::mat4 LightSpaceMVP;
+        };
+
+        const auto view = registry.view<Transform, MeshRenderer>();
+
+        for (auto [entity, transform, meshRenderer] : view.each()) {
+            const glm::mat4 world = transform.ToMatrix();
+            const ShadowVertexUniformBlock vertexUniform{lightSpaceMatrix * world};
+
+            SDL_PushGPUVertexUniformData(commandBuffer, 0, &vertexUniform, sizeof(vertexUniform));
+            meshRenderer.Model->DrawDepthOnly(renderPass);
+        }
+    }
 }
