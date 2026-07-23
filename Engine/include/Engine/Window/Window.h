@@ -7,12 +7,12 @@
 
 class Window {
 public:
-    bool Create(
-        const char *title,
-        int width,
-        int height);
+    Window(const char *title, int width, int height);
 
-    void Destroy();
+    ~Window();
+
+    Window(const Window &) = delete;
+    Window &operator=(const Window &) = delete;
 
     SDL_Window *GetNativeWindow() const;
 

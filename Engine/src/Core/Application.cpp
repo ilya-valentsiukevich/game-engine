@@ -2,21 +2,11 @@
 // Created by Ilya Valentsiukevich on 22/07/2026.
 //
 
-#include "../include/Engine/Core/Application.h"
-
+#include <Engine/Core/Application.h>
 #include <SDL3/SDL.h>
 
-bool Application::Initialize() {
-    if (!SDL_Init(SDL_INIT_VIDEO))
-        return false;
-
-    if (!m_window.Create("My Engine", 1280, 720))
-        return false;
-
-    if (!m_renderer.Initialize(m_window))
-        return false;
-
-    return true;
+Application::Application()
+    : m_window("My Engine", 1280, 720), m_renderer(m_window) {
 }
 
 void Application::Run() {
@@ -27,13 +17,6 @@ void Application::Run() {
 
         SDL_Delay(1);
     }
-}
-
-void Application::Shutdown() {
-    m_renderer.Shutdown();
-    m_window.Destroy();
-
-    SDL_Quit();
 }
 
 void Application::PollEvents() {

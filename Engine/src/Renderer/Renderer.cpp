@@ -3,55 +3,47 @@
 //
 
 #include <Engine/Renderer/Renderer.h>
+#include <Engine/Renderer/GPUDevice.h>
 #include <Engine/Renderer/Vertex.h>
 #include <Engine/Window/Window.h>
 #include <Engine/Assets/ShaderLoader/ShaderLoader.h>
 
 #include <cstring>
+#include <format>
 
-bool Renderer::Initialize(Window &window) {
-    m_window = &window;
-
-    m_device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_MSL,
-        true,
-        nullptr
-    );
-
-    if (m_device == nullptr) {
-        SDL_Log("Failed to create GPU Device: %s", SDL_GetError());
-        return false;
-    }
-
+Renderer::Renderer(Window &window)
+    : m_window(&window), m_device(std::make_unique<GPUDevice>()) {
     SDL_Log(
         "GPU Driver: %s",
-        SDL_GetGPUDeviceDriver(m_device)
+        SDL_GetGPUDeviceDriver(m_device->Get())
     );
 
     if (!SDL_ClaimWindowForGPUDevice(
-        m_device,
+        m_device->Get(),
         m_window->GetNativeWindow())) {
         SDL_Log(
             "Failed to claim window: %s",
             SDL_GetError());
 
-        return false;
+        throw std::runtime_error(
+            std::format("Failed to claim window: {}", SDL_GetError()));
     }
 
-    if (!LoadShaders())
-        return false;
+    if (!LoadShaders()) {
+        throw std::runtime_error("Failed to load shaders");
+    }
 
-    if (!CreatePipeline())
-        return false;
+    if (!CreatePipeline()) {
+        throw std::runtime_error("Failed to create pipeline");
+    }
 
-    if (!CreateVertexBuffer())
-        return false;
-
-    return true;
+    if (!CreateVertexBuffer()) {
+        throw std::runtime_error("Failed to create vertex buffer");
+    }
 }
 
 bool Renderer::BeginFrame() {
-    m_commandBuffer = SDL_AcquireGPUCommandBuffer(m_device);
+    m_commandBuffer = SDL_AcquireGPUCommandBuffer(m_device->Get());
 
     if (!m_commandBuffer) {
         SDL_Log("Failed to acquire command buffer.");
@@ -119,37 +111,26 @@ void Renderer::EndFrame() {
     m_swapchainTexture = nullptr;
 }
 
-void Renderer::Shutdown() {
+Renderer::~Renderer() {
     if (!m_device)
         return;
 
-    if (m_vertexBuffer) {
-        SDL_ReleaseGPUBuffer(m_device, m_vertexBuffer);
-        m_vertexBuffer = nullptr;
-    }
-
-    if (m_pipeline) {
-        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipeline);
-        m_pipeline = nullptr;
-    }
-
+    // m_vertexBuffer/m_pipeline/m_vertexShader/m_fragmentShader release
+    // themselves via GPUResource's destructor (declared after m_device,
+    // so they run first). m_device itself is destroyed last.
     SDL_ReleaseWindowFromGPUDevice(
-        m_device,
+        m_device->Get(),
         m_window->GetNativeWindow());
-
-    SDL_DestroyGPUDevice(m_device);
-
-    m_device = nullptr;
 }
 
 void Renderer::Render() {
     if (!m_renderPass)
         return;
 
-    SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline);
+    SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline.Get());
 
     SDL_GPUBufferBinding binding{};
-    binding.buffer = m_vertexBuffer;
+    binding.buffer = m_vertexBuffer.Get();
     binding.offset = 0;
 
     SDL_BindGPUVertexBuffers(m_renderPass, 0, &binding, 1);
@@ -157,7 +138,7 @@ void Renderer::Render() {
     SDL_DrawGPUPrimitives(m_renderPass, 3, 1, 0, 0);
 }
 
-SDL_GPUShader *Renderer::CreateShader(
+GPUShaderHandle Renderer::CreateShader(
     const std::filesystem::path &path,
     SDL_GPUShaderStage stage) {
     const auto code = ShaderLoader::LoadBinary(path);
@@ -173,7 +154,7 @@ SDL_GPUShader *Renderer::CreateShader(
     createInfo.num_storage_buffers = 0;
     createInfo.num_storage_textures = 0;
 
-    SDL_GPUShader *shader = SDL_CreateGPUShader(m_device, &createInfo);
+    SDL_GPUShader *shader = SDL_CreateGPUShader(m_device->Get(), &createInfo);
 
     if (!shader) {
         SDL_Log(
@@ -182,7 +163,7 @@ SDL_GPUShader *Renderer::CreateShader(
             SDL_GetError());
     }
 
-    return shader;
+    return GPUShaderHandle(m_device->Get(), shader);
 }
 
 bool Renderer::LoadShaders() {
@@ -206,7 +187,7 @@ bool Renderer::LoadShaders() {
 bool Renderer::CreatePipeline() {
     SDL_GPUColorTargetDescription colorTargetDescription{};
     colorTargetDescription.format = SDL_GetGPUSwapchainTextureFormat(
-        m_device,
+        m_device->Get(),
         m_window->GetNativeWindow());
 
     SDL_GPUVertexBufferDescription vertexBufferDescription{};
@@ -227,8 +208,8 @@ bool Renderer::CreatePipeline() {
     vertexAttributes[1].offset = offsetof(Vertex, Color);
 
     SDL_GPUGraphicsPipelineCreateInfo pipelineCreateInfo{};
-    pipelineCreateInfo.vertex_shader = m_vertexShader;
-    pipelineCreateInfo.fragment_shader = m_fragmentShader;
+    pipelineCreateInfo.vertex_shader = m_vertexShader.Get();
+    pipelineCreateInfo.fragment_shader = m_fragmentShader.Get();
     pipelineCreateInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
 
     pipelineCreateInfo.vertex_input_state.vertex_buffer_descriptions =
@@ -241,13 +222,14 @@ bool Renderer::CreatePipeline() {
             &colorTargetDescription;
     pipelineCreateInfo.target_info.num_color_targets = 1;
 
-    m_pipeline = SDL_CreateGPUGraphicsPipeline(m_device, &pipelineCreateInfo);
+    SDL_GPUGraphicsPipeline *pipeline =
+            SDL_CreateGPUGraphicsPipeline(m_device->Get(), &pipelineCreateInfo);
 
-    SDL_ReleaseGPUShader(m_device, m_vertexShader);
-    SDL_ReleaseGPUShader(m_device, m_fragmentShader);
+    m_pipeline = GPUPipelineHandle(m_device->Get(), pipeline);
 
-    m_vertexShader = nullptr;
-    m_fragmentShader = nullptr;
+    // Once the pipeline is built, the shader modules are no longer needed.
+    m_vertexShader.Reset();
+    m_fragmentShader.Reset();
 
     if (!m_pipeline) {
         SDL_Log("Failed to create pipeline: %s", SDL_GetError());
@@ -270,7 +252,9 @@ bool Renderer::CreateVertexBuffer() {
     bufferCreateInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
     bufferCreateInfo.size = size;
 
-    m_vertexBuffer = SDL_CreateGPUBuffer(m_device, &bufferCreateInfo);
+    m_vertexBuffer = GPUBufferHandle(
+        m_device->Get(),
+        SDL_CreateGPUBuffer(m_device->Get(), &bufferCreateInfo));
 
     if (!m_vertexBuffer) {
         SDL_Log("Failed to create vertex buffer: %s", SDL_GetError());
@@ -281,29 +265,36 @@ bool Renderer::CreateVertexBuffer() {
     transferCreateInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     transferCreateInfo.size = size;
 
-    SDL_GPUTransferBuffer *transferBuffer =
-            SDL_CreateGPUTransferBuffer(m_device, &transferCreateInfo);
+    GPUTransferBufferHandle transferBuffer(
+        m_device->Get(),
+        SDL_CreateGPUTransferBuffer(m_device->Get(), &transferCreateInfo));
 
     if (!transferBuffer) {
         SDL_Log("Failed to create transfer buffer: %s", SDL_GetError());
         return false;
     }
 
-    void *mapped = SDL_MapGPUTransferBuffer(m_device, transferBuffer, false);
+    void *mapped = SDL_MapGPUTransferBuffer(m_device->Get(), transferBuffer.Get(), false);
+
+    if (!mapped) {
+        SDL_Log("Failed to map transfer buffer: %s", SDL_GetError());
+        return false;
+    }
+
     std::memcpy(mapped, vertices, size);
-    SDL_UnmapGPUTransferBuffer(m_device, transferBuffer);
+    SDL_UnmapGPUTransferBuffer(m_device->Get(), transferBuffer.Get());
 
     SDL_GPUCommandBuffer *uploadCommandBuffer =
-            SDL_AcquireGPUCommandBuffer(m_device);
+            SDL_AcquireGPUCommandBuffer(m_device->Get());
 
     SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);
 
     SDL_GPUTransferBufferLocation source{};
-    source.transfer_buffer = transferBuffer;
+    source.transfer_buffer = transferBuffer.Get();
     source.offset = 0;
 
     SDL_GPUBufferRegion destination{};
-    destination.buffer = m_vertexBuffer;
+    destination.buffer = m_vertexBuffer.Get();
     destination.offset = 0;
     destination.size = size;
 
@@ -312,7 +303,6 @@ bool Renderer::CreateVertexBuffer() {
     SDL_EndGPUCopyPass(copyPass);
     SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
 
-    SDL_ReleaseGPUTransferBuffer(m_device, transferBuffer);
-
+    // transferBuffer releases itself here (RAII), no manual call needed.
     return true;
 }

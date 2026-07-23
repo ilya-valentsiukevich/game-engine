@@ -4,19 +4,24 @@
 
 #include "../include/Engine/Window/Window.h"
 
-bool Window::Create(const char *title,
-                    int width,
-                    int height) {
+#include <SDL3/SDL_error.h>
+#include <format>
+#include <stdexcept>
+
+Window::Window(const char *title, int width, int height) {
     m_window = SDL_CreateWindow(
         title,
         width,
         height,
         SDL_WINDOW_RESIZABLE);
 
-    return m_window != nullptr;
+    if (!m_window) {
+        throw std::runtime_error(
+            std::format("Failed to create window: {}", SDL_GetError()));
+    }
 }
 
-void Window::Destroy() {
+Window::~Window() {
     if (m_window) {
         SDL_DestroyWindow(m_window);
         m_window = nullptr;
