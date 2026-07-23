@@ -32,4 +32,3 @@ vertex VSOutput main0(uint vertexId [[vertex_id]])
     out.TexCoord = uvs[vertexId];
     return out;
 }
-// test marker 1784845416

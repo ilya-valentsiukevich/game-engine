@@ -229,7 +229,8 @@ namespace Engine {
             device, "Assets/Shaders/Compiled/Cube.vert.msl", SDL_GPU_SHADERSTAGE_VERTEX, 1);
 
         // --- Stage 1: equirectangular HDRI -> base environment cubemap.
-        m_environmentCubemap = std::make_unique<CubemapTexture>(device, kEnvironmentSize, 1, kHdrFormat);
+        m_environmentCubemap = std::make_unique<CubemapTexture>(
+            device, kEnvironmentSize, kEnvironmentMipLevels, kHdrFormat);
 
         {
             const Shader equirectFragmentShader(
@@ -245,6 +246,14 @@ namespace Engine {
                 commandBuffer, equirectPipeline, m_cubeVertexBuffer,
                 m_environmentCubemap->Get(), 0, faceViewProjections,
                 equirectTexture.Get(), m_hdrSampler.Get(), NoFragmentUniform);
+
+            // Only mip 0 was just rendered; Prefilter.frag.msl below samples
+            // this cubemap at a PDF-driven fractional LOD, so the rest of
+            // the chain must exist before that pass runs. Same "generate
+            // outside any render pass, same command buffer, before submit"
+            // rule Texture::UploadPixels follows.
+            SDL_GenerateMipmapsForGPUTexture(commandBuffer, m_environmentCubemap->Get());
+
             SDL_SubmitGPUCommandBuffer(commandBuffer);
         }
 
@@ -282,10 +291,17 @@ namespace Engine {
                 device, kHdrFormat, std::nullopt, cubeVertexShader, prefilterFragmentShader,
                 Pipeline::VertexLayout::PositionOnly);
 
+            // One command buffer for all 5 mips x 6 faces (30 render
+            // passes) instead of one buffer per mip: each RenderCubeFaces
+            // call already opens and closes its own render pass per face,
+            // so nothing here needs its own submission boundary — this
+            // only cuts down on redundant CPU-side submit/wait overhead
+            // during the one-time bake.
+            SDL_GPUCommandBuffer *commandBuffer = SDL_AcquireGPUCommandBuffer(device);
+
             for (Uint32 mip = 0; mip < kPrefilterMipLevels; ++mip) {
                 const float roughness = static_cast<float>(mip) / static_cast<float>(kPrefilterMipLevels - 1);
 
-                SDL_GPUCommandBuffer *commandBuffer = SDL_AcquireGPUCommandBuffer(device);
                 RenderCubeFaces(
                     commandBuffer, prefilterPipeline, m_cubeVertexBuffer,
                     m_prefilteredCubemap->Get(), mip, faceViewProjections,
@@ -293,8 +309,9 @@ namespace Engine {
                     [roughness](SDL_GPUCommandBuffer *cmd) {
                         SDL_PushGPUFragmentUniformData(cmd, 0, &roughness, sizeof(roughness));
                     });
-                SDL_SubmitGPUCommandBuffer(commandBuffer);
             }
+
+            SDL_SubmitGPUCommandBuffer(commandBuffer);
         }
 
         // --- Stage 4: BRDF integration LUT — no cube, no environment

@@ -3,6 +3,10 @@ using namespace metal;
 
 constant float kPi = 3.14159265359;
 constant uint kSampleCount = 1024u;
+// Must track EnvironmentMap::kEnvironmentSize — the per-face resolution of
+// the cubemap this pass samples, needed to convert a solid angle into a
+// mip level below.
+constant float kEnvironmentFaceSize = 512.0;
 
 float RadicalInverseVdC(uint bits)
 {
@@ -39,6 +43,21 @@ float3 ImportanceSampleGGX(float2 xi, float3 n, float roughness)
     return normalize(tangent * h.x + bitangent * h.y + n * h.z);
 }
 
+// Same GGX NDF as Mesh.frag.msl's DistributionGGX, duplicated rather than
+// shared (this is a different shader/pipeline) — needed below to turn each
+// importance sample's PDF into a source mip level.
+float DistributionGGX(float NdotH, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH2 = NdotH * NdotH;
+
+    float denom = NdotH2 * (a2 - 1.0) + 1.0;
+    denom = kPi * denom * denom;
+
+    return a2 / max(denom, 1e-7);
+}
+
 struct VSOutput
 {
     float4 Position [[position]];
@@ -67,6 +86,12 @@ fragment float4 main0(VSOutput in [[stage_in]],
     float totalWeight = 0.0;
     float3 prefilteredColor = float3(0.0);
 
+    // Solid angle one texel of the base environment cubemap covers —
+    // the fixed half of the saSample/saTexel ratio below (Karis, "Real
+    // Shading in Unreal Engine 4", §4.3 / the LearnOpenGL prefilter
+    // addendum).
+    float saTexel = 4.0 * kPi / (6.0 * kEnvironmentFaceSize * kEnvironmentFaceSize);
+
     for (uint i = 0u; i < kSampleCount; ++i)
     {
         float2 xi = Hammersley(i, kSampleCount);
@@ -76,7 +101,22 @@ fragment float4 main0(VSOutput in [[stage_in]],
         float NdotL = max(dot(n, l), 0.0);
         if (NdotL > 0.0)
         {
-            prefilteredColor += environmentMap.sample(environmentSampler, l).rgb * NdotL;
+            float NdotH = max(dot(n, h), 0.0);
+            float HdotV = max(dot(h, v), 0.0);
+
+            // A GGX sample's PDF is low exactly where the lobe is wide (high
+            // roughness) or the sample lands far from the highlight — those
+            // directions each cover a large solid angle of the true
+            // integral, so reading a coarser (pre-averaged) mip there
+            // removes the aliasing/fireflies a single-mip, point-sampled
+            // source would otherwise bake permanently into this face —
+            // without this, a bright sun texel in the source HDRI shows up
+            // as a hard, non-physical speckle in every rough reflection.
+            float pdf = DistributionGGX(NdotH, uniforms.Roughness) * NdotH / (4.0 * HdotV) + 1e-4;
+            float saSample = 1.0 / (float(kSampleCount) * pdf);
+            float mipLevel = uniforms.Roughness < 1e-4 ? 0.0 : 0.5 * log2(saSample / saTexel);
+
+            prefilteredColor += environmentMap.sample(environmentSampler, l, level(mipLevel)).rgb * NdotL;
             totalWeight += NdotL;
         }
     }

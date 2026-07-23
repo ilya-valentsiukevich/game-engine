@@ -28,5 +28,15 @@ fragment float4 main0(VSOutput in [[stage_in]],
 {
     float2 uv = SampleSphericalMap(normalize(in.WorldDirection));
     float3 color = equirectangularMap.sample(equirectangularSampler, uv).rgb;
+
+    // Clamped below RGBA16F's max representable value (65504): an HDRI's
+    // sun disk can exceed that after the equirect->cubemap copy, and an
+    // unclamped inf survives every downstream convolution/blur/tonemap as
+    // inf or NaN (inf/inf in ACES) — a handful of flashing black/white
+    // pixels with no other symptom. 500 is well above anything the
+    // convolution passes need for correct energy, chosen only to stay
+    // clear of the fp16 ceiling.
+    color = min(color, float3(500.0));
+
     return float4(color, 1.0);
 }

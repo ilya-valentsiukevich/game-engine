@@ -24,7 +24,20 @@ fragment float4 main0(VSOutput in [[stage_in]],
     // brightness) trigger bloom on its own, which reads as a color-fringed
     // artifact rather than "this pixel is bright".
     float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
-    float3 result = luminance > uniforms.Threshold ? color : float3(0.0);
+
+    // Soft knee (Unity/Filament-style quadratic) instead of a hard cut: a
+    // pixel hovering right at Threshold from frame to frame (a moving
+    // specular highlight, an animated light) would otherwise flicker in
+    // and out of bloom entirely from one frame to the next. Below
+    // Threshold - knee: no contribution. Above Threshold + knee: full
+    // luminance, same as the old hard cut. In between: a smooth ramp.
+    constexpr float kKnee = 0.2;
+    float soft = luminance - uniforms.Threshold + kKnee;
+    soft = clamp(soft, 0.0, 2.0 * kKnee);
+    soft = soft * soft / (4.0 * kKnee + 1e-5);
+    float contribution = max(luminance - uniforms.Threshold, soft);
+
+    float3 result = color * (contribution / max(luminance, 1e-5));
 
     return float4(result, 1.0);
 }

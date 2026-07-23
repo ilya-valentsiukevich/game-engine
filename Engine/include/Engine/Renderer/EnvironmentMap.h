@@ -22,6 +22,13 @@ namespace Engine {
     class EnvironmentMap {
     public:
         static constexpr Uint32 kEnvironmentSize = 512;
+        // Full mip chain (512 -> 1): Prefilter.frag.msl picks a fractional
+        // LOD on this cubemap from the GGX sample PDF's solid angle, not
+        // just roughness — a single-mip source made every prefiltered face
+        // point-sample the raw HDRI (including its sun disk) at full
+        // resolution regardless of roughness, which is what caused visible
+        // fireflies/blotches in rough reflections.
+        static constexpr Uint32 kEnvironmentMipLevels = 10;
         static constexpr Uint32 kIrradianceSize = 32;
         static constexpr Uint32 kPrefilterSize = 128;
         static constexpr Uint32 kPrefilterMipLevels = 5;

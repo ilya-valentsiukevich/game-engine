@@ -226,29 +226,30 @@ fragment float4 main0(PSInput in [[stage_in]],
     float3 ambient;
     if (light.IBLParams.w > 0.5)
     {
-        float3 kS = FresnelSchlickRoughness(NdotV, F0, roughness);
-        float3 kD = (1.0 - kS) * (1.0 - metallic);
-
-        float3 irradiance = irradianceMap.sample(irradianceSampler, N).rgb;
-        float3 diffuseAmbient = kD * irradiance * albedo;
-
         // Floored separately from the real `roughness` used everywhere
         // else: direct lighting's specular highlight (ShadePBR) is a
         // single point sample of the light, so a low roughness there just
         // makes a small, sharp highlight — correct and unremarkable.
         // Ambient specular instead reflects the *entire* prefiltered sky
-        // dome across the whole visible surface, so any low-roughness spot
-        // in metallicRoughnessTexture's G channel (invisible before this
-        // milestone, since there was no environment to reflect) now shows
-        // up as a distinct patch of cloud detail — most noticeable on the
-        // low-poly character meshes, where each patch lines up with a
-        // handful of triangles. Flooring only the ambient lookup keeps
-        // that mirror-like clarity from making individual texture-
-        // roughness variation this visible, without touching direct
-        // light's highlights or embedding an ad hoc value in
-        // DistributionGGX. light.IBLParams.x/y are IBLSettings::
-        // MinAmbientRoughness/MaxReflectionLod.
+        // dome across the whole visible surface, so on these flat-shaded,
+        // low-poly character meshes every triangle's single constant
+        // normal mirrors a distinct, differently-colored patch of the
+        // prefiltered environment — a faceted, swimming look most visible
+        // at low roughness. Flooring keeps that mirror-like clarity down;
+        // it does not (and cannot) fix per-facet normals, which would need
+        // smooth-shaded geometry. Used for all three ambient-specular
+        // lookups below (kS, prefiltered LOD, BRDF LUT row) so they
+        // consistently describe the same effective surface — mixing the
+        // raw roughness into kS alone previously over-brightened grazing
+        // angles slightly relative to the LOD/LUT terms. light.IBLParams.x/y
+        // are IBLSettings::MinAmbientRoughness/MaxReflectionLod.
         float ambientRoughness = max(roughness, light.IBLParams.x);
+
+        float3 kS = FresnelSchlickRoughness(NdotV, F0, ambientRoughness);
+        float3 kD = (1.0 - kS) * (1.0 - metallic);
+
+        float3 irradiance = irradianceMap.sample(irradianceSampler, N).rgb;
+        float3 diffuseAmbient = kD * irradiance * albedo;
 
         float3 R = reflect(-V, N);
         float3 prefilteredColor = prefilteredMap.sample(

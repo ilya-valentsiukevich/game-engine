@@ -105,6 +105,26 @@ namespace Engine {
             m_device->Get(),
             m_window->GetNativeWindow());
 
+        // Composite.frag.msl does its own ACES tonemap and pow(1/2.2) gamma
+        // encode, on the assumption that writing to the swapchain applies
+        // no further color conversion. An _SRGB swapchain format would have
+        // the hardware apply a second (linear -> sRGB) encode on top of
+        // that write, double-gamma-correcting the whole image. This engine
+        // only ever requests SDL's default SDR composition, which is a
+        // plain UNORM format (BGRA8Unorm on Metal) — this check exists so a
+        // future change to SDL_SetGPUSwapchainParameters requesting an SDR_
+        // LINEAR or HDR composition fails loudly here instead of silently
+        // washing out every frame.
+        if (colorFormat == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB ||
+            colorFormat == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB) {
+            throw std::runtime_error(
+                "Swapchain format is an _SRGB format, but Composite.frag.msl "
+                "already applies its own gamma encode — this would double-"
+                "gamma-correct every frame. Either switch the swapchain "
+                "composition back to SDR (UNORM, no automatic sRGB encode) "
+                "or remove the manual pow(1.0 / 2.2) in Composite.frag.msl.");
+        }
+
         int windowWidth = 0;
         int windowHeight = 0;
         SDL_GetWindowSizeInPixels(
