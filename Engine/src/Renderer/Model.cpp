@@ -16,12 +16,6 @@
 
 namespace Engine {
     namespace {
-        // Blinn-Phong-specific factors glTF's pbrMetallicRoughness material
-        // doesn't carry — every loaded Model gets the same starting point
-        // until a per-material override mechanism exists.
-        constexpr float kDefaultSpecularStrength = 0.5f;
-        constexpr float kDefaultShininess = 32.0f;
-
         AssetHandle<Texture> LoadBaseColorTexture(
             SDL_GPUDevice *device, const GltfPrimitive &primitive, AssetManager &assets) {
             // Base color is the texture the fragment shader multiplies
@@ -54,6 +48,38 @@ namespace Engine {
             // an error.
             return assets.GetWhiteTexture(device);
         }
+
+        AssetHandle<Texture> LoadMetallicRoughnessTexture(
+            SDL_GPUDevice *device, const GltfPrimitive &primitive, AssetManager &assets) {
+            // Metallic/roughness values aren't color data — they must stay
+            // UNORM, not _SRGB, or the hardware's gamma decode on sample
+            // would silently distort every mid-range value.
+            constexpr SDL_GPUTextureFormat kMetallicRoughnessFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+
+            if (!primitive.metallicRoughnessTexturePath.empty()) {
+                return assets.Textures.Load(
+                    primitive.metallicRoughnessTexturePath,
+                    [device, path = primitive.metallicRoughnessTexturePath, kMetallicRoughnessFormat] {
+                        return std::make_shared<Texture>(device, path, kMetallicRoughnessFormat);
+                    },
+                    [device](Texture &texture, const std::filesystem::path &path) {
+                        texture.Reload(device, path);
+                    });
+            }
+
+            if (!primitive.metallicRoughnessTextureData.empty()) {
+                return std::make_shared<Texture>(
+                    device, std::span(primitive.metallicRoughnessTextureData), kMetallicRoughnessFormat);
+            }
+
+            // No texture: assets.GetWhiteTexture's stored bytes are all
+            // 255, which sample to 1.0 whether interpreted as _SRGB or
+            // UNORM (white is a fixed point of the sRGB transfer function)
+            // — reusing the same cached white texture here is exact, not
+            // an approximation, so the material's metallic/roughness
+            // factors alone decide the result.
+            return assets.GetWhiteTexture(device);
+        }
     }
 
     Model::Model(SDL_GPUDevice *device,
@@ -70,14 +96,17 @@ namespace Engine {
                 device, std::span(primitive.vertices), std::span(primitive.indices));
 
             AssetHandle<Texture> baseColorTexture = LoadBaseColorTexture(device, primitive, assets);
+            AssetHandle<Texture> metallicRoughnessTexture =
+                    LoadMetallicRoughnessTexture(device, primitive, assets);
 
             const glm::vec4 baseColorFactor(
                 primitive.baseColorFactor[0], primitive.baseColorFactor[1],
                 primitive.baseColorFactor[2], primitive.baseColorFactor[3]);
 
             part.material = std::make_unique<Material>(
-                std::move(baseColorTexture), baseColorFactor, sampler,
-                kDefaultSpecularStrength, kDefaultShininess);
+                std::move(baseColorTexture), baseColorFactor,
+                std::move(metallicRoughnessTexture), primitive.metallicFactor, primitive.roughnessFactor,
+                sampler);
 
             m_parts.push_back(std::move(part));
         }
