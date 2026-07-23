@@ -21,7 +21,7 @@ namespace Engine {
     class Material {
     public:
         Material(AssetHandle<Texture> baseColorTexture, const glm::vec4 &baseColorFactor,
-                  const Sampler &sampler);
+                  const Sampler &sampler, float specularStrength, float shininess);
 
         Material(const Material &) = delete;
         Material &operator=(const Material &) = delete;
@@ -32,5 +32,7 @@ namespace Engine {
         AssetHandle<Texture> m_baseColorTexture;
         glm::vec4 m_baseColorFactor;
         const Sampler *m_sampler;
+        float m_specularStrength;
+        float m_shininess;
     };
 }

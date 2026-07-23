@@ -1,6 +1,9 @@
 #include <metal_stdlib>
 using namespace metal;
 
+constant uint kMaxPointLights = 4;
+constant uint kMaxSpotLights = 2;
+
 struct PSInput
 {
     float4 Position [[position]];
@@ -9,18 +12,60 @@ struct PSInput
     float2 TexCoord;
 };
 
+struct PointLightData
+{
+    float4 Position;    // xyz: world position, w: unused
+    float4 Color;       // xyz: color, w: unused
+    float4 Attenuation; // x: constant, y: linear, z: quadratic, w: unused
+};
+
+struct SpotLightData
+{
+    float4 Position;    // xyz: world position, w: unused
+    float4 Direction;   // xyz: unit vector the light travels along, w: unused
+    float4 Color;       // xyz: color, w: unused
+    float4 Attenuation; // x: constant, y: linear, z: quadratic, w: unused
+    float4 ConeAngles;  // x: cos(inner angle), y: cos(outer angle), z/w: unused
+};
+
 struct LightUniformBlock
 {
-    float4 Direction;    // xyz: unit vector the light travels along (light -> scene)
-    float4 Color;        // xyz: light color/intensity
-    float4 ViewPosition; // xyz: camera world position, for the specular half-vector
-    float4 Params;       // x: ambient strength, y: specular strength, z: shininess
+    float4 SunDirection; // xyz: unit vector the sun travels along, w: unused
+    float4 SunColor;     // xyz: sun color, w: unused
+    float4 ViewPosition; // xyz: camera world position, w: unused
+    float4 SunParams;    // x: ambient strength, y: point light count, z: spot light count, w: unused
+    PointLightData PointLights[kMaxPointLights];
+    SpotLightData SpotLights[kMaxSpotLights];
 };
 
 struct MaterialUniformBlock
 {
     float4 BaseColorFactor; // tints diffuseTexture; is the whole base color when it's a 1x1 white fallback
+    float4 Params;          // x: specular strength, y: shininess, z/w: unused
 };
+
+// Diffuse + specular contribution of one already-attenuated light. Shared
+// by the sun (attenuation = 1, computed once outside this function) and
+// every point/spot light in the loops below, instead of repeating the
+// Blinn-Phong formula three times.
+float3 ShadeLight(float3 normal, float3 viewDir, float3 lightDir, float3 lightColor,
+                   float attenuation, float3 baseColor, float specularStrength, float shininess)
+{
+    float3 halfDir = normalize(lightDir + viewDir);
+
+    float diffuseFactor = max(dot(normal, lightDir), 0.0);
+    float specularFactor = pow(max(dot(normal, halfDir), 0.0), shininess);
+
+    float3 diffuse = diffuseFactor * lightColor * baseColor;
+    float3 specular = specularStrength * specularFactor * lightColor;
+
+    return (diffuse + specular) * attenuation;
+}
+
+float Attenuate(float distance, float4 attenuation)
+{
+    return 1.0 / (attenuation.x + attenuation.y * distance + attenuation.z * distance * distance);
+}
 
 fragment float4 main0(PSInput in [[stage_in]],
                        constant LightUniformBlock &light [[buffer(0)]],
@@ -29,25 +74,52 @@ fragment float4 main0(PSInput in [[stage_in]],
                        sampler diffuseSampler [[sampler(0)]])
 {
     float3 normal = normalize(in.WorldNormal);
-    float3 lightDir = normalize(-light.Direction.xyz);
     float3 viewDir = normalize(light.ViewPosition.xyz - in.WorldPosition);
-    float3 halfDir = normalize(lightDir + viewDir);
-
-    float diffuseFactor = max(dot(normal, lightDir), 0.0);
-    float specularFactor = pow(max(dot(normal, halfDir), 0.0), light.Params.z);
-
-    float3 ambient = light.Params.x * light.Color.xyz;
-    float3 diffuse = diffuseFactor * light.Color.xyz;
-    float3 specular = light.Params.y * specularFactor * light.Color.xyz;
-
     float4 baseColor = diffuseTexture.sample(diffuseSampler, in.TexCoord) * material.BaseColorFactor;
-    float3 litColor = (ambient + diffuse) * baseColor.rgb + specular;
+
+    float specularStrength = material.Params.x;
+    float shininess = material.Params.y;
+
+    float3 ambient = light.SunParams.x * light.SunColor.xyz * baseColor.rgb;
+
+    float3 sunLightDir = normalize(-light.SunDirection.xyz);
+    float3 result = ambient + ShadeLight(normal, viewDir, sunLightDir, light.SunColor.xyz,
+                                          1.0, baseColor.rgb, specularStrength, shininess);
+
+    uint pointLightCount = min(uint(light.SunParams.y), kMaxPointLights);
+    for (uint i = 0; i < pointLightCount; ++i)
+    {
+        constant PointLightData &pointLight = light.PointLights[i];
+        float3 toLight = pointLight.Position.xyz - in.WorldPosition;
+        float distance = length(toLight);
+        float3 lightDir = toLight / distance;
+        float attenuation = Attenuate(distance, pointLight.Attenuation);
+
+        result += ShadeLight(normal, viewDir, lightDir, pointLight.Color.xyz,
+                              attenuation, baseColor.rgb, specularStrength, shininess);
+    }
+
+    uint spotLightCount = min(uint(light.SunParams.z), kMaxSpotLights);
+    for (uint i = 0; i < spotLightCount; ++i)
+    {
+        constant SpotLightData &spotLight = light.SpotLights[i];
+        float3 toLight = spotLight.Position.xyz - in.WorldPosition;
+        float distance = length(toLight);
+        float3 lightDir = toLight / distance;
+
+        float theta = dot(lightDir, normalize(-spotLight.Direction.xyz));
+        float epsilon = spotLight.ConeAngles.x - spotLight.ConeAngles.y;
+        float coneFactor = clamp((theta - spotLight.ConeAngles.y) / epsilon, 0.0, 1.0);
+
+        float attenuation = Attenuate(distance, spotLight.Attenuation) * coneFactor;
+
+        result += ShadeLight(normal, viewDir, lightDir, spotLight.Color.xyz,
+                              attenuation, baseColor.rgb, specularStrength, shininess);
+    }
 
     // Lighting above is computed in linear space; the swapchain expects
-    // gamma-encoded output, so encode once here at the very end. Will be
-    // replaced by proper tone mapping in M15 — this is the same spot in
-    // the pipeline.
-    float3 gammaCorrected = pow(litColor, float3(1.0 / 2.2));
+    // gamma-encoded output, so encode once here at the very end.
+    float3 gammaCorrected = pow(result, float3(1.0 / 2.2));
 
     return float4(gammaCorrected, baseColor.a);
 }

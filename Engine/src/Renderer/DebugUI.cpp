@@ -135,14 +135,33 @@ namespace Engine {
             if (ImGui::CollapsingHeader("Directional Light", ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::ColorEdit3("Color", &light->Color.x);
                 ImGui::SliderFloat("Ambient Strength", &light->AmbientStrength, 0.0f, 1.0f);
-                ImGui::SliderFloat("Specular Strength", &light->SpecularStrength, 0.0f, 1.0f);
-                ImGui::SliderFloat("Shininess", &light->Shininess, 1.0f, 128.0f);
 
                 // Not editable: overwritten every Update() tick by
                 // Renderer's day-night cycle — an edit here would just be
                 // undone on the next frame.
                 ImGui::Text("Direction (animated, read-only): %.2f, %.2f, %.2f",
                             light->Direction.x, light->Direction.y, light->Direction.z);
+            }
+        }
+
+        if (PointLight *pointLight = registry.try_get<PointLight>(m_selectedEntity)) {
+            if (ImGui::CollapsingHeader("Point Light", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::ColorEdit3("Color", &pointLight->Color.x);
+                ImGui::DragFloat("Constant", &pointLight->Constant, 0.01f, 0.0f, 10.0f);
+                ImGui::DragFloat("Linear", &pointLight->Linear, 0.001f, 0.0f, 1.0f);
+                ImGui::DragFloat("Quadratic", &pointLight->Quadratic, 0.0001f, 0.0f, 1.0f);
+            }
+        }
+
+        if (SpotLight *spotLight = registry.try_get<SpotLight>(m_selectedEntity)) {
+            if (ImGui::CollapsingHeader("Spot Light", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::ColorEdit3("Color", &spotLight->Color.x);
+                ImGui::DragFloat3("Direction", &spotLight->Direction.x, 0.01f, -1.0f, 1.0f);
+                ImGui::DragFloat("Constant", &spotLight->Constant, 0.01f, 0.0f, 10.0f);
+                ImGui::DragFloat("Linear", &spotLight->Linear, 0.001f, 0.0f, 1.0f);
+                ImGui::DragFloat("Quadratic", &spotLight->Quadratic, 0.0001f, 0.0f, 1.0f);
+                ImGui::SliderFloat("Inner Cone Angle", &spotLight->InnerConeAngleDegrees, 1.0f, 89.0f);
+                ImGui::SliderFloat("Outer Cone Angle", &spotLight->OuterConeAngleDegrees, 1.0f, 89.0f);
             }
         }
 
