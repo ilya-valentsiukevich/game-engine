@@ -56,6 +56,21 @@ namespace Engine {
 
         void CreateDepthTexture(Uint32 width, Uint32 height);
 
+        // Render() split into named phases so a shadow pass (before
+        // MainPass) and a post-processing pass (between MainPass and
+        // UIPass) each have an obvious, local place to go later instead of
+        // growing inside one monolithic function — see docs/tasks.md #11.
+
+        // Draws every (Transform, MeshRenderer) entity into the main color
+        // + depth targets (already open from BeginFrame) and ends that
+        // render pass.
+        void MainPass(Scene &scene);
+
+        // Builds this frame's DebugUI content and composites it over the
+        // swapchain in its own render pass (LOAD, not CLEAR, so it draws on
+        // top of whatever MainPass already put there).
+        void UIPass(Scene &scene, AppMode mode);
+
         Window *m_window = nullptr;
 
         // Declaration order matters: members below are destroyed before

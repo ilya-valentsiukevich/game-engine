@@ -162,9 +162,12 @@ namespace Engine {
         if (!m_renderPass)
             return;
 
-        entt::registry &registry = scene.Registry();
+        MainPass(scene);
+        UIPass(scene, mode);
+    }
 
-        m_debugUI->Draw(registry, mode);
+    void Renderer::MainPass(Scene &scene) {
+        entt::registry &registry = scene.Registry();
 
         SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline->Get());
 
@@ -207,7 +210,10 @@ namespace Engine {
 
         SDL_EndGPURenderPass(m_renderPass);
         m_renderPass = nullptr;
+    }
 
+    void Renderer::UIPass(Scene &scene, AppMode mode) {
+        m_debugUI->Draw(scene.Registry(), mode);
         m_debugUI->FinalizeDrawData(m_commandBuffer);
 
         SDL_GPUColorTargetInfo uiColorTarget{};
