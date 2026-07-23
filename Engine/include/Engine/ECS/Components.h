@@ -5,8 +5,18 @@
 
 #include <glm/glm.hpp>
 
+#include <string>
+
 namespace Engine {
     class Model;
+
+    // Human-readable label for an entity, shown in DebugUI's entity list.
+    // Entities without a Name simply don't appear there — this is a
+    // presentation detail, not a requirement for an entity to exist or be
+    // drawn.
+    struct Name {
+        std::string Value;
+    };
 
     // Marks an entity as something RenderSystem should draw, paired with a
     // Transform component on the same entity. Holding the handle here (on
