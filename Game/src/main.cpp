@@ -1,14 +1,16 @@
-#include <Engine/Application.h>
+#include <Engine/Core/Application.h>
+#include <SDL3/SDL.h>
 
-int main()
-{
-    Application app;
+#include <exception>
 
-    if (!app.Initialize())
-        return -1;
-
-    app.Run();
-    app.Shutdown();
+int main() {
+    try {
+        Engine::Application app;
+        app.Run();
+    } catch (const std::exception &e) {
+        SDL_Log("Fatal error: %s", e.what());
+        return 1;
+    }
 
     return 0;
 }
