@@ -29,6 +29,7 @@ target_include_directories(Engine
 find_package(SDL3 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(EnTT CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 
 find_path(CGLTF_INCLUDE_DIR NAMES cgltf.h)
@@ -44,6 +45,7 @@ target_link_libraries(Engine
         SDL3::SDL3
         fmt::fmt
         glm::glm
+        EnTT::EnTT
 )
 
 target_compile_features(Engine PUBLIC cxx_std_23)
