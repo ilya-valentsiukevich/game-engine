@@ -82,7 +82,7 @@ namespace Engine {
             "Assets/Shaders/Compiled/Mesh.frag.msl",
             SDL_GPU_SHADERSTAGE_FRAGMENT,
             2,  // numUniformBuffers: buffer(0) LightUniformBlock, buffer(1) MaterialUniformBlock
-            2); // numSamplers: sampler(0) diffuse, sampler(1) shadow map
+            3); // numSamplers: sampler(0) base color, sampler(1) metallic-roughness, sampler(2) shadow map
 
         const Shader shadowVertexShader(
             m_device->Get(),
@@ -342,7 +342,7 @@ namespace Engine {
         SDL_GPUTextureSamplerBinding shadowBinding{};
         shadowBinding.texture = m_shadowMap->GetTexture();
         shadowBinding.sampler = m_shadowMap->GetSampler();
-        SDL_BindGPUFragmentSamplers(m_renderPass, 1, &shadowBinding, 1);
+        SDL_BindGPUFragmentSamplers(m_renderPass, 2, &shadowBinding, 1);
 
         RenderSystem(registry, m_commandBuffer, m_renderPass, viewProjection);
 

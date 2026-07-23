@@ -3,6 +3,7 @@ using namespace metal;
 
 constant uint kMaxPointLights = 4;
 constant uint kMaxSpotLights = 2;
+constant float kPi = 3.14159265359;
 
 struct PSInput
 {
@@ -30,10 +31,10 @@ struct SpotLightData
 
 struct LightUniformBlock
 {
-    float4 SunDirection;      // xyz: unit vector the sun travels along, w: unused
-    float4 SunColor;          // xyz: sun color, w: unused
-    float4 ViewPosition;      // xyz: camera world position, w: unused
-    float4 SunParams;         // x: ambient strength, y: point light count, z: spot light count, w: unused
+    float4 SunDirection;       // xyz: unit vector the sun travels along, w: unused
+    float4 SunColor;           // xyz: sun color, w: unused
+    float4 ViewPosition;       // xyz: camera world position, w: unused
+    float4 SunParams;          // x: ambient strength, y: point light count, z: spot light count, w: unused
     float4x4 LightSpaceMatrix; // world space -> the sun's clip space, for shadow sampling
     PointLightData PointLights[kMaxPointLights];
     SpotLightData SpotLights[kMaxSpotLights];
@@ -41,26 +42,82 @@ struct LightUniformBlock
 
 struct MaterialUniformBlock
 {
-    float4 BaseColorFactor; // tints diffuseTexture; is the whole base color when it's a 1x1 white fallback
-    float4 Params;          // x: specular strength, y: shininess, z/w: unused
+    float4 BaseColorFactor; // tints baseColorTexture; is the whole base color when it's a 1x1 white fallback
+    float4 Params;          // x: metallic factor, y: roughness factor, z/w: unused
 };
 
-// Diffuse + specular contribution of one already-attenuated light. Shared
-// by the sun (attenuation = 1, computed once outside this function) and
-// every point/spot light in the loops below, instead of repeating the
-// Blinn-Phong formula three times.
-float3 ShadeLight(float3 normal, float3 viewDir, float3 lightDir, float3 lightColor,
-                   float attenuation, float3 baseColor, float specularStrength, float shininess)
+// Normal Distribution Function (Trowbridge-Reitz/GGX): fraction of
+// microfacets oriented exactly toward the half-vector H — the only
+// orientation that reflects L into V. Peaks sharply for low roughness (a
+// small, bright highlight), spreads out for high roughness (a wide, dim
+// one).
+float DistributionGGX(float3 N, float3 H, float roughness)
 {
-    float3 halfDir = normalize(lightDir + viewDir);
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
 
-    float diffuseFactor = max(dot(normal, lightDir), 0.0);
-    float specularFactor = pow(max(dot(normal, halfDir), 0.0), shininess);
+    float denom = NdotH2 * (a2 - 1.0) + 1.0;
+    denom = kPi * denom * denom;
 
-    float3 diffuse = diffuseFactor * lightColor * baseColor;
-    float3 specular = specularStrength * specularFactor * lightColor;
+    return a2 / max(denom, 1e-7);
+}
 
-    return (diffuse + specular) * attenuation;
+// Schlick-GGX approximation of the Smith geometry term for one direction
+// (either N.V or N.L) — how much of the light along that direction survives
+// self-shadowing/masking by neighboring microfacets.
+float GeometrySchlickGGX(float NdotV, float roughness)
+{
+    // Direct-lighting remap of roughness (Karis, "Real Shading in Unreal
+    // Engine 4") — a different remap applies to IBL, which this engine
+    // doesn't have yet.
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+
+    return GeometrySchlickGGX(NdotV, roughness) * GeometrySchlickGGX(NdotL, roughness);
+}
+
+// Fresnel-Schlick: fraction of light reflected (vs. refracted into the
+// surface) at this microfacet, growing toward 1 at grazing angles
+// regardless of F0.
+float3 FresnelSchlick(float cosTheta, float3 F0)
+{
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// Cook-Torrance direct lighting contribution of one already-attenuated
+// light. Shared by the sun (attenuation = 1) and every point/spot light in
+// the loops below, the same role ShadeLight played for Blinn-Phong.
+float3 ShadePBR(float3 N, float3 V, float3 L, float3 lightColor, float attenuation,
+                 float3 albedo, float metallic, float roughness, float3 F0)
+{
+    float3 H = normalize(V + L);
+    float NdotL = max(dot(N, L), 0.0);
+
+    float NDF = DistributionGGX(N, H, roughness);
+    float G = GeometrySmith(N, V, L, roughness);
+    float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    float3 numerator = NDF * G * F;
+    float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 1e-4;
+    float3 specular = numerator / denominator;
+
+    // kS is F itself; kD is what's left for diffuse scattering, zeroed for
+    // metals entirely — metals have no subsurface layer for light to
+    // diffuse through.
+    float3 kD = (1.0 - F) * (1.0 - metallic);
+
+    float3 radiance = lightColor * attenuation;
+    return (kD * albedo / kPi + specular) * radiance * NdotL;
 }
 
 float Attenuate(float distance, float4 attenuation)
@@ -110,25 +167,38 @@ float ShadowFactor(float3 worldPosition, float4x4 lightSpaceMatrix,
 fragment float4 main0(PSInput in [[stage_in]],
                        constant LightUniformBlock &light [[buffer(0)]],
                        constant MaterialUniformBlock &material [[buffer(1)]],
-                       texture2d<float> diffuseTexture [[texture(0)]],
-                       sampler diffuseSampler [[sampler(0)]],
-                       depth2d<float> shadowMap [[texture(1)]],
-                       sampler shadowSampler [[sampler(1)]])
+                       texture2d<float> baseColorTexture [[texture(0)]],
+                       sampler baseColorSampler [[sampler(0)]],
+                       texture2d<float> metallicRoughnessTexture [[texture(1)]],
+                       sampler metallicRoughnessSampler [[sampler(1)]],
+                       depth2d<float> shadowMap [[texture(2)]],
+                       sampler shadowSampler [[sampler(2)]])
 {
-    float3 normal = normalize(in.WorldNormal);
-    float3 viewDir = normalize(light.ViewPosition.xyz - in.WorldPosition);
-    float4 baseColor = diffuseTexture.sample(diffuseSampler, in.TexCoord) * material.BaseColorFactor;
+    float3 N = normalize(in.WorldNormal);
+    float3 V = normalize(light.ViewPosition.xyz - in.WorldPosition);
+    float4 baseColor = baseColorTexture.sample(baseColorSampler, in.TexCoord) * material.BaseColorFactor;
+    float3 albedo = baseColor.rgb;
 
-    float specularStrength = material.Params.x;
-    float shininess = material.Params.y;
+    float4 metallicRoughnessSample =
+            metallicRoughnessTexture.sample(metallicRoughnessSampler, in.TexCoord);
+    // glTF packing convention: G = roughness, B = metallic, R unused.
+    float metallic = material.Params.x * metallicRoughnessSample.b;
+    // Clamped away from 0 — a perfectly smooth surface sends
+    // DistributionGGX's denominator toward zero at the highlight's peak.
+    float roughness = clamp(material.Params.y * metallicRoughnessSample.g, 0.045, 1.0);
 
-    float3 ambient = light.SunParams.x * light.SunColor.xyz * baseColor.rgb;
+    // Dielectrics reflect ~4% of light at normal incidence regardless of
+    // color (glTF's fixed convention); metals tint their reflection with
+    // their own base color instead of having a separate diffuse albedo.
+    float3 F0 = mix(float3(0.04), albedo, metallic);
+
+    float3 ambient = light.SunParams.x * light.SunColor.xyz * albedo;
 
     float shadowFactor = ShadowFactor(in.WorldPosition, light.LightSpaceMatrix, shadowMap, shadowSampler);
 
-    float3 sunLightDir = normalize(-light.SunDirection.xyz);
-    float3 result = ambient + shadowFactor * ShadeLight(normal, viewDir, sunLightDir, light.SunColor.xyz,
-                                                          1.0, baseColor.rgb, specularStrength, shininess);
+    float3 sunDir = normalize(-light.SunDirection.xyz);
+    float3 result = ambient + shadowFactor * ShadePBR(N, V, sunDir, light.SunColor.xyz,
+                                                        1.0, albedo, metallic, roughness, F0);
 
     uint pointLightCount = min(uint(light.SunParams.y), kMaxPointLights);
     for (uint i = 0; i < pointLightCount; ++i)
@@ -136,11 +206,10 @@ fragment float4 main0(PSInput in [[stage_in]],
         constant PointLightData &pointLight = light.PointLights[i];
         float3 toLight = pointLight.Position.xyz - in.WorldPosition;
         float distance = length(toLight);
-        float3 lightDir = toLight / distance;
+        float3 L = toLight / distance;
         float attenuation = Attenuate(distance, pointLight.Attenuation);
 
-        result += ShadeLight(normal, viewDir, lightDir, pointLight.Color.xyz,
-                              attenuation, baseColor.rgb, specularStrength, shininess);
+        result += ShadePBR(N, V, L, pointLight.Color.xyz, attenuation, albedo, metallic, roughness, F0);
     }
 
     uint spotLightCount = min(uint(light.SunParams.z), kMaxSpotLights);
@@ -149,16 +218,15 @@ fragment float4 main0(PSInput in [[stage_in]],
         constant SpotLightData &spotLight = light.SpotLights[i];
         float3 toLight = spotLight.Position.xyz - in.WorldPosition;
         float distance = length(toLight);
-        float3 lightDir = toLight / distance;
+        float3 L = toLight / distance;
 
-        float theta = dot(lightDir, normalize(-spotLight.Direction.xyz));
+        float theta = dot(L, normalize(-spotLight.Direction.xyz));
         float epsilon = spotLight.ConeAngles.x - spotLight.ConeAngles.y;
         float coneFactor = clamp((theta - spotLight.ConeAngles.y) / epsilon, 0.0, 1.0);
 
         float attenuation = Attenuate(distance, spotLight.Attenuation) * coneFactor;
 
-        result += ShadeLight(normal, viewDir, lightDir, spotLight.Color.xyz,
-                              attenuation, baseColor.rgb, specularStrength, shininess);
+        result += ShadePBR(N, V, L, spotLight.Color.xyz, attenuation, albedo, metallic, roughness, F0);
     }
 
     // Lighting above is computed in linear space; the swapchain expects
