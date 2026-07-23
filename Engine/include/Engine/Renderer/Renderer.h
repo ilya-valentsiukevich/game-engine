@@ -59,11 +59,10 @@ namespace Engine {
         // Render() split into named phases so a shadow pass (before
         // MainPass) and a post-processing pass (between MainPass and
         // UIPass) each have an obvious, local place to go later instead of
-        // growing inside one monolithic function — see docs/tasks.md #11.
+        // growing inside one monolithic function.
 
-        // Draws every (Transform, MeshRenderer) entity into the main color
-        // + depth targets (already open from BeginFrame) and ends that
-        // render pass.
+        // Opens the main color + depth render pass, draws every (Transform,
+        // MeshRenderer) entity into it, and ends that render pass.
         void MainPass(Scene &scene);
 
         // Builds this frame's DebugUI content and composites it over the

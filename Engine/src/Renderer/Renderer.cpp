@@ -102,33 +102,10 @@ namespace Engine {
             return false;
         }
 
-        SDL_GPUColorTargetInfo colorTarget{};
-        colorTarget.texture = m_swapchainTexture;
-
-        colorTarget.clear_color = {
-            0.0f,
-            0.2f,
-            1.0f,
-            1.0f
-        };
-
-        colorTarget.load_op = SDL_GPU_LOADOP_CLEAR;
-        colorTarget.store_op = SDL_GPU_STOREOP_STORE;
-
-        SDL_GPUDepthStencilTargetInfo depthTarget{};
-        depthTarget.texture = m_depthTexture.Get();
-        depthTarget.clear_depth = 1.0f;
-        depthTarget.load_op = SDL_GPU_LOADOP_CLEAR;
-        depthTarget.store_op = SDL_GPU_STOREOP_DONT_CARE;
-        depthTarget.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
-        depthTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-
-        m_renderPass = SDL_BeginGPURenderPass(
-            m_commandBuffer,
-            &colorTarget,
-            1,
-            &depthTarget);
-
+        // The main color+depth render pass opens inside MainPass, not here
+        // — a shadow pass needs to run first, on the same command buffer,
+        // in its own render pass, and SDL_gpu only allows one render pass
+        // open at a time.
         return true;
     }
 
@@ -160,7 +137,7 @@ namespace Engine {
     }
 
     void Renderer::Render(Scene &scene, AppMode mode) {
-        if (!m_renderPass)
+        if (!m_commandBuffer || !m_swapchainTexture)
             return;
 
         MainPass(scene);
@@ -168,6 +145,29 @@ namespace Engine {
     }
 
     void Renderer::MainPass(Scene &scene) {
+        SDL_GPUColorTargetInfo colorTarget{};
+        colorTarget.texture = m_swapchainTexture;
+
+        colorTarget.clear_color = {
+            0.0f,
+            0.2f,
+            1.0f,
+            1.0f
+        };
+
+        colorTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+        colorTarget.store_op = SDL_GPU_STOREOP_STORE;
+
+        SDL_GPUDepthStencilTargetInfo depthTarget{};
+        depthTarget.texture = m_depthTexture.Get();
+        depthTarget.clear_depth = 1.0f;
+        depthTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+        depthTarget.store_op = SDL_GPU_STOREOP_DONT_CARE;
+        depthTarget.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+        depthTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
+        m_renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, &depthTarget);
+
         entt::registry &registry = scene.Registry();
 
         SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline->Get());
