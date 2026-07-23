@@ -4,6 +4,7 @@ add_library(Engine STATIC
         src/Core/Input.cpp
         src/Window/Window.cpp
         src/Renderer/Renderer.cpp
+        src/Renderer/DebugUI.cpp
         src/Renderer/GPUDevice.cpp
         src/Renderer/Shader.cpp
         src/Renderer/Pipeline.cpp
