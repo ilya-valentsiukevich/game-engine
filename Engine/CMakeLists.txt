@@ -11,7 +11,10 @@ add_library(Engine STATIC
         src/Renderer/Camera.cpp
         src/Renderer/Texture.cpp
         src/Renderer/Sampler.cpp
+        src/Renderer/Material.cpp
+        src/Renderer/Model.cpp
         src/Assets/ShaderLoader/ShaderLoader.cpp
+        src/Assets/ModelLoader/GltfLoader.cpp
 )
 
 target_include_directories(Engine
@@ -24,9 +27,12 @@ find_package(fmt CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 
+find_path(CGLTF_INCLUDE_DIR NAMES cgltf.h)
+
 target_include_directories(Engine
         PRIVATE
         ${Stb_INCLUDE_DIR}
+        ${CGLTF_INCLUDE_DIR}
 )
 
 target_link_libraries(Engine

@@ -6,10 +6,8 @@
 #include <Engine/Renderer/GPUDevice.h>
 #include <Engine/Renderer/Shader.h>
 #include <Engine/Renderer/Pipeline.h>
-#include <Engine/Renderer/Mesh.h>
-#include <Engine/Renderer/CubePrimitive.h>
+#include <Engine/Renderer/Model.h>
 #include <Engine/Renderer/Camera.h>
-#include <Engine/Renderer/Texture.h>
 #include <Engine/Renderer/Sampler.h>
 #include <Engine/Window/Window.h>
 
@@ -17,7 +15,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <format>
-#include <span>
 
 namespace Engine {
     Renderer::Renderer(Window &window)
@@ -36,13 +33,13 @@ namespace Engine {
 
         const Shader vertexShader(
             m_device->Get(),
-            "Assets/Shaders/Compiled/Cube.vert.msl",
+            "Assets/Shaders/Compiled/Mesh.vert.msl",
             SDL_GPU_SHADERSTAGE_VERTEX,
             1);
 
         const Shader fragmentShader(
             m_device->Get(),
-            "Assets/Shaders/Compiled/Cube.frag.msl",
+            "Assets/Shaders/Compiled/Mesh.frag.msl",
             SDL_GPU_SHADERSTAGE_FRAGMENT,
             0,  // numUniformBuffers
             1); // numSamplers
@@ -79,16 +76,13 @@ namespace Engine {
         m_pipeline = std::make_unique<Pipeline>(
             m_device->Get(), colorFormat, depthFormat, vertexShader, fragmentShader);
 
-        m_mesh = std::make_unique<Mesh>(
-            m_device->Get(), std::span(kCubeVertices), std::span(kCubeIndices));
-
-        m_texture = std::make_unique<Texture>(
-            m_device->Get(), "Assets/Textures/crate.jpg");
-
         m_sampler = std::make_unique<Sampler>(
             m_device->Get(),
             SDL_GPU_FILTER_LINEAR,
             SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
+
+        m_model = std::make_unique<Model>(
+            m_device->Get(), "Assets/Models/Knight/Knight.glb", *m_sampler);
     }
 
     bool Renderer::BeginFrame() {
@@ -172,9 +166,8 @@ namespace Engine {
         if (!m_device)
             return;
 
-        // m_depthTexture/m_pipeline/m_mesh/m_texture/m_sampler release
-        // themselves via their own destructors (declared after m_device, so
-        // they run first).
+        // m_depthTexture/m_pipeline/m_sampler/m_model release themselves via
+        // their own destructors (declared after m_device, so they run first).
         // m_device itself is destroyed last.
         SDL_ReleaseWindowFromGPUDevice(
             m_device->Get(),
@@ -192,11 +185,6 @@ namespace Engine {
 
         SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline->Get());
 
-        SDL_GPUTextureSamplerBinding textureSamplerBinding{};
-        textureSamplerBinding.texture = m_texture->Get();
-        textureSamplerBinding.sampler = m_sampler->Get();
-        SDL_BindGPUFragmentSamplers(m_renderPass, 0, &textureSamplerBinding, 1);
-
         int windowWidth = 0;
         int windowHeight = 0;
         SDL_GetWindowSizeInPixels(m_window->GetNativeWindow(), &windowWidth, &windowHeight);
@@ -206,16 +194,14 @@ namespace Engine {
         const glm::mat4 view = camera.GetViewMatrix();
         const glm::mat4 projection = camera.GetProjectionMatrix(aspectRatio);
 
-        for (const glm::vec3 &cubePosition : m_cubePositions) {
-            const glm::mat4 model =
-                    glm::translate(glm::mat4(1.0f), cubePosition) *
-                    glm::rotate(glm::mat4(1.0f), m_rotationAngle, glm::vec3(0.5f, 1.0f, 0.0f));
+        const glm::mat4 model =
+                glm::translate(glm::mat4(1.0f), m_modelPosition) *
+                glm::rotate(glm::mat4(1.0f), m_rotationAngle, glm::vec3(0.5f, 1.0f, 0.0f));
 
-            const glm::mat4 mvp = projection * view * model;
+        const glm::mat4 mvp = projection * view * model;
 
-            SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
+        SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
 
-            m_mesh->Draw(m_renderPass);
-        }
+        m_model->Draw(m_renderPass);
     }
 }
