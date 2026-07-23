@@ -20,9 +20,16 @@ namespace Engine {
         // At most one of these is set: the base color image is either an
         // external file (baseColorTexturePath) or embedded in the glTF/GLB
         // binary chunk (baseColorTextureData). Both empty means the
-        // primitive has no base color texture.
+        // primitive has no base color texture — Model falls back to a
+        // shared white texture so baseColorFactor below still applies.
         std::filesystem::path baseColorTexturePath;
         std::vector<unsigned char> baseColorTextureData;
+
+        // glTF's pbrMetallicRoughness.baseColorFactor: multiplied into the
+        // base color texture (or, with no texture, is the entire base
+        // color by itself). Defaults to opaque white — glTF's own default
+        // when a primitive has no material at all.
+        float baseColorFactor[4]{1.0f, 1.0f, 1.0f, 1.0f};
     };
 
     // Parses a glTF 2.0 file via cgltf and flattens every triangle-list

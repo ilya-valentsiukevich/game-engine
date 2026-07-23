@@ -6,18 +6,18 @@
 #include <Engine/Renderer/Mesh.h>
 #include <Engine/Renderer/Material.h>
 #include <Engine/Renderer/Texture.h>
+#include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Assets/AssetManager.h>
 #include <Engine/Assets/ModelLoader/GltfLoader.h>
 
-#include <format>
+#include <glm/glm.hpp>
+
 #include <span>
-#include <stdexcept>
 
 namespace Engine {
     namespace {
         AssetHandle<Texture> LoadBaseColorTexture(
-            SDL_GPUDevice *device, const GltfPrimitive &primitive,
-            AssetCache<Texture> &textureCache) {
+            SDL_GPUDevice *device, const GltfPrimitive &primitive, AssetManager &assets) {
             // Base color is the texture the fragment shader multiplies
             // directly into the lit color (see Mesh.frag.msl) — it's color
             // data, so it needs an _SRGB format for the hardware to decode
@@ -25,7 +25,7 @@ namespace Engine {
             constexpr SDL_GPUTextureFormat kBaseColorFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
 
             if (!primitive.baseColorTexturePath.empty()) {
-                return textureCache.Load(
+                return assets.Textures.Load(
                     primitive.baseColorTexturePath,
                     [device, path = primitive.baseColorTexturePath, kBaseColorFormat] {
                         return std::make_shared<Texture>(device, path, kBaseColorFormat);
@@ -42,7 +42,11 @@ namespace Engine {
                     device, std::span(primitive.baseColorTextureData), kBaseColorFormat);
             }
 
-            return nullptr;
+            // No texture at all (common for solid-colored props/placeholder
+            // assets): fall back to a shared white texture so baseColorFactor
+            // alone still determines the color, instead of treating this as
+            // an error.
+            return assets.GetWhiteTexture(device);
         }
     }
 
@@ -59,15 +63,13 @@ namespace Engine {
             part.mesh = std::make_unique<Mesh>(
                 device, std::span(primitive.vertices), std::span(primitive.indices));
 
-            AssetHandle<Texture> baseColorTexture =
-                    LoadBaseColorTexture(device, primitive, assets.Textures);
+            AssetHandle<Texture> baseColorTexture = LoadBaseColorTexture(device, primitive, assets);
 
-            if (!baseColorTexture) {
-                throw std::runtime_error(std::format(
-                    "Primitive in model ({}) has no base color texture", path.string()));
-            }
+            const glm::vec4 baseColorFactor(
+                primitive.baseColorFactor[0], primitive.baseColorFactor[1],
+                primitive.baseColorFactor[2], primitive.baseColorFactor[3]);
 
-            part.material = std::make_unique<Material>(std::move(baseColorTexture), sampler);
+            part.material = std::make_unique<Material>(std::move(baseColorTexture), baseColorFactor, sampler);
 
             m_parts.push_back(std::move(part));
         }
@@ -75,9 +77,9 @@ namespace Engine {
 
     Model::~Model() = default;
 
-    void Model::Draw(SDL_GPURenderPass *renderPass) const {
+    void Model::Draw(SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass *renderPass) const {
         for (const MeshPart &part : m_parts) {
-            part.material->Bind(renderPass);
+            part.material->Bind(commandBuffer, renderPass);
             part.mesh->Draw(renderPass);
         }
     }

@@ -49,7 +49,7 @@ namespace Engine {
             return result;
         }
 
-        void FillBaseColorTexture(
+        void FillBaseColorInfo(
             const cgltf_primitive &primitive, const std::filesystem::path &modelDir,
             GltfPrimitive &out) {
             const cgltf_material *material = primitive.material;
@@ -57,8 +57,18 @@ namespace Engine {
             if (!material || !material->has_pbr_metallic_roughness)
                 return;
 
-            const cgltf_texture *texture =
-                    material->pbr_metallic_roughness.base_color_texture.texture;
+            const cgltf_pbr_metallic_roughness &pbr = material->pbr_metallic_roughness;
+
+            // Read regardless of whether a texture follows below: factor
+            // multiplies the texture when there is one, and is the entire
+            // base color by itself when there isn't (see GltfPrimitive's
+            // baseColorFactor doc comment).
+            out.baseColorFactor[0] = pbr.base_color_factor[0];
+            out.baseColorFactor[1] = pbr.base_color_factor[1];
+            out.baseColorFactor[2] = pbr.base_color_factor[2];
+            out.baseColorFactor[3] = pbr.base_color_factor[3];
+
+            const cgltf_texture *texture = pbr.base_color_texture.texture;
 
             if (!texture || !texture->image)
                 return;
@@ -210,7 +220,7 @@ namespace Engine {
                     out.indices.push_back(static_cast<Uint16>(index));
                 }
 
-                FillBaseColorTexture(primitive, modelDir, out);
+                FillBaseColorInfo(primitive, modelDir, out);
                 BakeNodeTransform(node, out);
 
                 primitives.push_back(std::move(out));

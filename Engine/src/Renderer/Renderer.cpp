@@ -44,7 +44,7 @@ namespace Engine {
             m_device->Get(),
             "Assets/Shaders/Compiled/Mesh.frag.msl",
             SDL_GPU_SHADERSTAGE_FRAGMENT,
-            1,  // numUniformBuffers
+            2,  // numUniformBuffers: buffer(0) LightUniformBlock, buffer(1) MaterialUniformBlock
             1); // numSamplers
 
         const SDL_GPUTextureFormat colorFormat = SDL_GetGPUSwapchainTextureFormat(

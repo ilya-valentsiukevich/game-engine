@@ -12,6 +12,20 @@
 #include <stdexcept>
 
 namespace Engine {
+    namespace {
+        // stb_image's decoded buffer must be freed via stbi_image_free() no
+        // matter how the enclosing scope exits — same "free even on throw"
+        // need as GltfLoader's CgltfDataGuard.
+        struct StbImageGuard {
+            stbi_uc *pixels = nullptr;
+
+            ~StbImageGuard() {
+                if (pixels)
+                    stbi_image_free(pixels);
+            }
+        };
+    }
+
     Texture::Texture(SDL_GPUDevice *device, const std::filesystem::path &path, SDL_GPUTextureFormat format)
         : m_format(format) {
         Reload(device, path);
@@ -24,16 +38,22 @@ namespace Engine {
         int height = 0;
         int sourceChannels = 0;
 
-        stbi_uc *pixels = stbi_load_from_memory(
+        StbImageGuard guard;
+        guard.pixels = stbi_load_from_memory(
             encodedImageData.data(), static_cast<int>(encodedImageData.size()),
             &width, &height, &sourceChannels, 4);
 
-        if (!pixels) {
+        if (!guard.pixels) {
             throw std::runtime_error(
                 std::format("Failed to decode embedded texture: {}", stbi_failure_reason()));
         }
 
-        UploadPixels(device, pixels, width, height); // frees pixels itself
+        UploadPixels(device, guard.pixels, width, height);
+    }
+
+    Texture::Texture(SDL_GPUDevice *device, const std::array<unsigned char, 4> &rgba, SDL_GPUTextureFormat format)
+        : m_format(format) {
+        UploadPixels(device, rgba.data(), 1, 1);
     }
 
     void Texture::Reload(SDL_GPUDevice *device, const std::filesystem::path &path) {
@@ -42,21 +62,22 @@ namespace Engine {
         int sourceChannels = 0;
 
         // Force 4 channels (RGBA) regardless of the source file's actual
-        // channel count, since SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM below
-        // expects a tightly packed 4-byte-per-pixel layout.
-        stbi_uc *pixels = stbi_load(
+        // channel count, since the tightly-packed-4-bytes-per-pixel upload
+        // below expects it.
+        StbImageGuard guard;
+        guard.pixels = stbi_load(
             path.string().c_str(), &width, &height, &sourceChannels, 4);
 
-        if (!pixels) {
+        if (!guard.pixels) {
             throw std::runtime_error(
                 std::format("Failed to load texture ({}): {}",
                     path.string(), stbi_failure_reason()));
         }
 
-        UploadPixels(device, pixels, width, height); // frees pixels itself
+        UploadPixels(device, guard.pixels, width, height);
     }
 
-    void Texture::UploadPixels(SDL_GPUDevice *device, unsigned char *pixels, int width, int height) {
+    void Texture::UploadPixels(SDL_GPUDevice *device, const unsigned char *pixels, int width, int height) {
         const Uint32 pixelDataSize =
                 static_cast<Uint32>(width) * static_cast<Uint32>(height) * 4;
 
@@ -74,7 +95,6 @@ namespace Engine {
             device, SDL_CreateGPUTexture(device, &textureCreateInfo));
 
         if (!m_texture) {
-            stbi_image_free(pixels);
             throw std::runtime_error(
                 std::format("Failed to create GPU texture: {}", SDL_GetError()));
         }
@@ -87,7 +107,6 @@ namespace Engine {
             device, SDL_CreateGPUTransferBuffer(device, &transferCreateInfo));
 
         if (!transferBuffer) {
-            stbi_image_free(pixels);
             throw std::runtime_error(
                 std::format("Failed to create transfer buffer: {}", SDL_GetError()));
         }
@@ -95,14 +114,12 @@ namespace Engine {
         void *mapped = SDL_MapGPUTransferBuffer(device, transferBuffer.Get(), false);
 
         if (!mapped) {
-            stbi_image_free(pixels);
             throw std::runtime_error(
                 std::format("Failed to map transfer buffer: {}", SDL_GetError()));
         }
 
         std::memcpy(mapped, pixels, pixelDataSize);
         SDL_UnmapGPUTransferBuffer(device, transferBuffer.Get());
-        stbi_image_free(pixels);
 
         SDL_GPUCommandBuffer *uploadCommandBuffer = SDL_AcquireGPUCommandBuffer(device);
         SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);

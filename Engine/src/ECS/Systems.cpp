@@ -42,7 +42,7 @@ namespace Engine {
             const VertexUniformBlock vertexUniform{viewProjection * world, world, normalMatrix};
 
             SDL_PushGPUVertexUniformData(commandBuffer, 0, &vertexUniform, sizeof(vertexUniform));
-            meshRenderer.Model->Draw(renderPass);
+            meshRenderer.Model->Draw(commandBuffer, renderPass);
         }
     }
 }

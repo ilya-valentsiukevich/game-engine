@@ -5,6 +5,7 @@
 
 #include <Engine/Renderer/GPUResource.h>
 
+#include <array>
 #include <filesystem>
 #include <span>
 
@@ -31,6 +32,12 @@ namespace Engine {
         Texture(SDL_GPUDevice *device, std::span<const unsigned char> encodedImageData,
                 SDL_GPUTextureFormat format);
 
+        // Uploads a single solid-color pixel directly, skipping image
+        // decoding entirely — used for small fixed-color placeholders, e.g.
+        // AssetManager's shared white fallback texture (see
+        // AssetManager::GetWhiteTexture).
+        Texture(SDL_GPUDevice *device, const std::array<unsigned char, 4> &rgba, SDL_GPUTextureFormat format);
+
         Texture(const Texture &) = delete;
         Texture &operator=(const Texture &) = delete;
 
@@ -48,9 +55,10 @@ namespace Engine {
         }
 
     private:
-        // Takes ownership of pixels (an stb_image allocation) and frees it
-        // via stbi_image_free() on every path, success or throw.
-        void UploadPixels(SDL_GPUDevice *device, unsigned char *pixels, int width, int height);
+        // Copies pixels (tightly packed RGBA8) into a freshly created GPU
+        // texture. Doesn't take ownership — callers decoding via stb_image
+        // are responsible for freeing their own buffer.
+        void UploadPixels(SDL_GPUDevice *device, const unsigned char *pixels, int width, int height);
 
         SDL_GPUTextureFormat m_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
         GPUTextureHandle m_texture;
