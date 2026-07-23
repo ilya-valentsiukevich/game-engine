@@ -32,6 +32,22 @@ namespace Engine {
         // color by itself). Defaults to opaque white — glTF's own default
         // when a primitive has no material at all.
         float baseColorFactor[4]{1.0f, 1.0f, 1.0f, 1.0f};
+
+        // Same "at most one of these is set" rule as baseColorTexturePath/
+        // Data above — glTF's metallic-roughness image, packed G:
+        // roughness, B: metallic (see glTF's own pbrMetallicRoughness
+        // spec).
+        std::filesystem::path metallicRoughnessTexturePath;
+        std::vector<unsigned char> metallicRoughnessTextureData;
+
+        // glTF's pbrMetallicRoughness.metallicFactor/roughnessFactor:
+        // multiplied into the metallic-roughness texture's B/G channels
+        // respectively (or, with no texture, are the entire metallic/
+        // roughness values by themselves). Both default to 1.0 — glTF's
+        // own default for a material with no explicit pbrMetallicRoughness
+        // block.
+        float metallicFactor = 1.0f;
+        float roughnessFactor = 1.0f;
     };
 
     // Parses a glTF 2.0 file via cgltf and flattens every triangle-list

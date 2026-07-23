@@ -49,7 +49,38 @@ namespace Engine {
             return result;
         }
 
-        void FillBaseColorInfo(
+        struct TextureSource {
+            std::filesystem::path path;
+            std::vector<unsigned char> data;
+        };
+
+        // At most one of path/data ends up non-empty — mirrors the "URI vs
+        // embedded buffer view, or neither" rule GltfPrimitive's own
+        // texture fields document.
+        TextureSource ExtractTextureSource(
+            const cgltf_texture_view &textureView, const std::filesystem::path &modelDir) {
+            TextureSource source;
+            const cgltf_texture *texture = textureView.texture;
+
+            if (!texture || !texture->image)
+                return source;
+
+            const cgltf_image &image = *texture->image;
+
+            if (image.uri) {
+                // Assumes a relative file path; a data:-URI (inline base64)
+                // isn't handled here.
+                source.path = modelDir / DecodeUri(image.uri);
+            } else if (image.buffer_view) {
+                const uint8_t *data = cgltf_buffer_view_data(image.buffer_view);
+                const cgltf_size size = image.buffer_view->size;
+                source.data.assign(data, data + size);
+            }
+
+            return source;
+        }
+
+        void FillPbrMetallicRoughnessInfo(
             const cgltf_primitive &primitive, const std::filesystem::path &modelDir,
             GltfPrimitive &out) {
             const cgltf_material *material = primitive.material;
@@ -61,29 +92,23 @@ namespace Engine {
 
             // Read regardless of whether a texture follows below: factor
             // multiplies the texture when there is one, and is the entire
-            // base color by itself when there isn't (see GltfPrimitive's
-            // baseColorFactor doc comment).
+            // value by itself when there isn't (see GltfPrimitive's
+            // baseColorFactor/metallicFactor/roughnessFactor doc comments).
             out.baseColorFactor[0] = pbr.base_color_factor[0];
             out.baseColorFactor[1] = pbr.base_color_factor[1];
             out.baseColorFactor[2] = pbr.base_color_factor[2];
             out.baseColorFactor[3] = pbr.base_color_factor[3];
+            out.metallicFactor = pbr.metallic_factor;
+            out.roughnessFactor = pbr.roughness_factor;
 
-            const cgltf_texture *texture = pbr.base_color_texture.texture;
+            const TextureSource baseColor = ExtractTextureSource(pbr.base_color_texture, modelDir);
+            out.baseColorTexturePath = baseColor.path;
+            out.baseColorTextureData = baseColor.data;
 
-            if (!texture || !texture->image)
-                return;
-
-            const cgltf_image &image = *texture->image;
-
-            if (image.uri) {
-                // Assumes a relative file path; a data:-URI (inline base64)
-                // isn't handled here.
-                out.baseColorTexturePath = modelDir / DecodeUri(image.uri);
-            } else if (image.buffer_view) {
-                const uint8_t *data = cgltf_buffer_view_data(image.buffer_view);
-                const cgltf_size size = image.buffer_view->size;
-                out.baseColorTextureData.assign(data, data + size);
-            }
+            const TextureSource metallicRoughness =
+                    ExtractTextureSource(pbr.metallic_roughness_texture, modelDir);
+            out.metallicRoughnessTexturePath = metallicRoughness.path;
+            out.metallicRoughnessTextureData = metallicRoughness.data;
         }
 
         // Folds the node's world transform (its own TRS composed with every
@@ -216,7 +241,7 @@ namespace Engine {
                     out.indices.push_back(static_cast<Uint32>(index));
                 }
 
-                FillBaseColorInfo(primitive, modelDir, out);
+                FillPbrMetallicRoughnessInfo(primitive, modelDir, out);
                 BakeNodeTransform(node, out);
 
                 primitives.push_back(std::move(out));
