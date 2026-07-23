@@ -20,6 +20,7 @@ struct UniformBlock
 {
     float4x4 MVP;
     float4x4 Model;
+    float4x4 NormalMatrix; // transpose(inverse(mat3(Model))), embedded in a 4x4
 };
 
 vertex VSOutput main0(VSInput in [[stage_in]],
@@ -30,9 +31,9 @@ vertex VSOutput main0(VSInput in [[stage_in]],
     out.Position = uniforms.MVP * float4(in.Position, 1.0);
     out.WorldPosition = (uniforms.Model * float4(in.Position, 1.0)).xyz;
 
-    // w = 0 drops translation, leaving only rotation/scale — correct as
-    // long as Model applies no non-uniform scale.
-    out.WorldNormal = normalize((uniforms.Model * float4(in.Normal, 0.0)).xyz);
+    // NormalMatrix (not Model) so non-uniform Scale doesn't skew the
+    // normal — w = 0 still drops translation.
+    out.WorldNormal = normalize((uniforms.NormalMatrix * float4(in.Normal, 0.0)).xyz);
 
     out.TexCoord = in.TexCoord;
 

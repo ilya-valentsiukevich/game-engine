@@ -62,6 +62,20 @@ namespace Engine {
         pipelineCreateInfo.depth_stencil_state.enable_depth_write = true;
         pipelineCreateInfo.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
 
+        // glTF vertices are wound CCW when viewed from the front, in its
+        // own right-handed convention (the spec's own front-face rule).
+        // GLM_FORCE_LEFT_HANDED (see GlmConfig.h) makes the view matrix a
+        // genuinely left-handed frame — lookAt's (right, up, forward) obey
+        // right = cross(up, forward) instead of cross(forward, up) — which
+        // flips the parity a same-vertex-order right-handed pipeline would
+        // produce. The projection step doesn't introduce a further flip
+        // (X/Y keep their sign into clip space), so a front-facing,
+        // CCW-authored triangle ends up CLOCKWISE on screen here. If models
+        // vanish or render inside-out after this change, that reasoning is
+        // wrong for this asset set — flip this one enum to COUNTER_CLOCKWISE.
+        pipelineCreateInfo.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
+        pipelineCreateInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
+
         SDL_GPUGraphicsPipeline *pipeline =
                 SDL_CreateGPUGraphicsPipeline(device, &pipelineCreateInfo);
 

@@ -7,30 +7,66 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <stdexcept>
 
 namespace Engine {
-    Texture::Texture(SDL_GPUDevice *device, const std::filesystem::path &path) {
+    namespace {
+        // stb_image's decoded buffer must be freed via stbi_image_free() no
+        // matter how the enclosing scope exits — same "free even on throw"
+        // need as GltfLoader's CgltfDataGuard.
+        struct StbImageGuard {
+            stbi_uc *pixels = nullptr;
+
+            ~StbImageGuard() {
+                if (pixels)
+                    stbi_image_free(pixels);
+            }
+        };
+
+        // Full mip chain length down to a 1x1 level, e.g. 256 -> 9 (256,
+        // 128, 64, 32, 16, 8, 4, 2, 1). A 1x1 texture (AssetManager's white
+        // fallback) correctly comes back as 1 — no chain needed.
+        Uint32 CalculateMipLevels(int width, int height) {
+            Uint32 levels = 1;
+
+            for (int largestDimension = std::max(width, height); largestDimension > 1; ++levels)
+                largestDimension /= 2;
+
+            return levels;
+        }
+    }
+
+    Texture::Texture(SDL_GPUDevice *device, const std::filesystem::path &path, SDL_GPUTextureFormat format)
+        : m_format(format) {
         Reload(device, path);
     }
 
-    Texture::Texture(SDL_GPUDevice *device, std::span<const unsigned char> encodedImageData) {
+    Texture::Texture(SDL_GPUDevice *device, std::span<const unsigned char> encodedImageData,
+                      SDL_GPUTextureFormat format)
+        : m_format(format) {
         int width = 0;
         int height = 0;
         int sourceChannels = 0;
 
-        stbi_uc *pixels = stbi_load_from_memory(
+        StbImageGuard guard;
+        guard.pixels = stbi_load_from_memory(
             encodedImageData.data(), static_cast<int>(encodedImageData.size()),
             &width, &height, &sourceChannels, 4);
 
-        if (!pixels) {
+        if (!guard.pixels) {
             throw std::runtime_error(
                 std::format("Failed to decode embedded texture: {}", stbi_failure_reason()));
         }
 
-        UploadPixels(device, pixels, width, height); // frees pixels itself
+        UploadPixels(device, guard.pixels, width, height);
+    }
+
+    Texture::Texture(SDL_GPUDevice *device, const std::array<unsigned char, 4> &rgba, SDL_GPUTextureFormat format)
+        : m_format(format) {
+        UploadPixels(device, rgba.data(), 1, 1);
     }
 
     void Texture::Reload(SDL_GPUDevice *device, const std::filesystem::path &path) {
@@ -39,39 +75,49 @@ namespace Engine {
         int sourceChannels = 0;
 
         // Force 4 channels (RGBA) regardless of the source file's actual
-        // channel count, since SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM below
-        // expects a tightly packed 4-byte-per-pixel layout.
-        stbi_uc *pixels = stbi_load(
+        // channel count, since the tightly-packed-4-bytes-per-pixel upload
+        // below expects it.
+        StbImageGuard guard;
+        guard.pixels = stbi_load(
             path.string().c_str(), &width, &height, &sourceChannels, 4);
 
-        if (!pixels) {
+        if (!guard.pixels) {
             throw std::runtime_error(
                 std::format("Failed to load texture ({}): {}",
                     path.string(), stbi_failure_reason()));
         }
 
-        UploadPixels(device, pixels, width, height); // frees pixels itself
+        UploadPixels(device, guard.pixels, width, height);
     }
 
-    void Texture::UploadPixels(SDL_GPUDevice *device, unsigned char *pixels, int width, int height) {
+    void Texture::UploadPixels(SDL_GPUDevice *device, const unsigned char *pixels, int width, int height) {
         const Uint32 pixelDataSize =
                 static_cast<Uint32>(width) * static_cast<Uint32>(height) * 4;
+        const Uint32 mipLevels = CalculateMipLevels(width, height);
 
         SDL_GPUTextureCreateInfo textureCreateInfo{};
         textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-        textureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        textureCreateInfo.format = m_format;
         textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+
+        // SDL_gpu generates each mip level by rendering the previous one
+        // into it, so the texture must also be usable as a color target —
+        // without this it asserts at the SDL_GenerateMipmapsForGPUTexture
+        // call below. Not needed for a single-level texture (nothing to
+        // generate into).
+        if (mipLevels > 1)
+            textureCreateInfo.usage |= SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+
         textureCreateInfo.width = static_cast<Uint32>(width);
         textureCreateInfo.height = static_cast<Uint32>(height);
         textureCreateInfo.layer_count_or_depth = 1;
-        textureCreateInfo.num_levels = 1;
+        textureCreateInfo.num_levels = mipLevels;
         textureCreateInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
 
         m_texture = GPUTextureHandle(
             device, SDL_CreateGPUTexture(device, &textureCreateInfo));
 
         if (!m_texture) {
-            stbi_image_free(pixels);
             throw std::runtime_error(
                 std::format("Failed to create GPU texture: {}", SDL_GetError()));
         }
@@ -84,7 +130,6 @@ namespace Engine {
             device, SDL_CreateGPUTransferBuffer(device, &transferCreateInfo));
 
         if (!transferBuffer) {
-            stbi_image_free(pixels);
             throw std::runtime_error(
                 std::format("Failed to create transfer buffer: {}", SDL_GetError()));
         }
@@ -92,14 +137,12 @@ namespace Engine {
         void *mapped = SDL_MapGPUTransferBuffer(device, transferBuffer.Get(), false);
 
         if (!mapped) {
-            stbi_image_free(pixels);
             throw std::runtime_error(
                 std::format("Failed to map transfer buffer: {}", SDL_GetError()));
         }
 
         std::memcpy(mapped, pixels, pixelDataSize);
         SDL_UnmapGPUTransferBuffer(device, transferBuffer.Get());
-        stbi_image_free(pixels);
 
         SDL_GPUCommandBuffer *uploadCommandBuffer = SDL_AcquireGPUCommandBuffer(device);
         SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(uploadCommandBuffer);
@@ -124,6 +167,14 @@ namespace Engine {
         SDL_UploadToGPUTexture(copyPass, &source, &destination, false);
 
         SDL_EndGPUCopyPass(copyPass);
+
+        // Must run outside of any pass (copy pass above has already ended)
+        // but is still fine on the same command buffer before it's
+        // submitted. Only mip level 0 was just uploaded; this fills in the
+        // rest of the chain from it.
+        if (mipLevels > 1)
+            SDL_GenerateMipmapsForGPUTexture(uploadCommandBuffer, m_texture.Get());
+
         SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
 
         // transferBuffer releases itself here (RAII), no manual call needed.

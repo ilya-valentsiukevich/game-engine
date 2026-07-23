@@ -35,4 +35,10 @@ namespace Engine {
         glm::vec3 Axis{0.0f, 1.0f, 0.0f};
         float AngularSpeed = 0.0f; // radians/second
     };
+
+    // Tags the one entity whose Camera component Scene::Update/Renderer
+    // should use each frame. Kept separate from Camera itself so multiple
+    // camera entities could coexist later with exactly one marked active,
+    // instead of Scene storing a raw entity handle.
+    struct ActiveCamera {};
 }

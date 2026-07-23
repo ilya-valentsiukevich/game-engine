@@ -17,8 +17,14 @@ struct LightUniformBlock
     float4 Params;       // x: ambient strength, y: specular strength, z: shininess
 };
 
+struct MaterialUniformBlock
+{
+    float4 BaseColorFactor; // tints diffuseTexture; is the whole base color when it's a 1x1 white fallback
+};
+
 fragment float4 main0(PSInput in [[stage_in]],
                        constant LightUniformBlock &light [[buffer(0)]],
+                       constant MaterialUniformBlock &material [[buffer(1)]],
                        texture2d<float> diffuseTexture [[texture(0)]],
                        sampler diffuseSampler [[sampler(0)]])
 {
@@ -34,8 +40,14 @@ fragment float4 main0(PSInput in [[stage_in]],
     float3 diffuse = diffuseFactor * light.Color.xyz;
     float3 specular = light.Params.y * specularFactor * light.Color.xyz;
 
-    float4 baseColor = diffuseTexture.sample(diffuseSampler, in.TexCoord);
+    float4 baseColor = diffuseTexture.sample(diffuseSampler, in.TexCoord) * material.BaseColorFactor;
     float3 litColor = (ambient + diffuse) * baseColor.rgb + specular;
 
-    return float4(litColor, baseColor.a);
+    // Lighting above is computed in linear space; the swapchain expects
+    // gamma-encoded output, so encode once here at the very end. Will be
+    // replaced by proper tone mapping in M15 — this is the same spot in
+    // the pipeline.
+    float3 gammaCorrected = pow(litColor, float3(1.0 / 2.2));
+
+    return float4(gammaCorrected, baseColor.a);
 }

@@ -9,7 +9,9 @@
 
 namespace Engine {
     Application::Application()
-        : m_window("My Engine", 1280, 720), m_renderer(m_window) {
+        : m_window("My Engine", 1280, 720),
+          m_renderer(m_window),
+          m_scene(m_renderer.GetDevice(), m_renderer.GetDefaultSampler()) {
         SDL_SetWindowRelativeMouseMode(m_window.GetNativeWindow(), m_mode == AppMode::Game);
     }
 
@@ -62,13 +64,17 @@ namespace Engine {
                         m_input.OnMouseMotion(event.motion.xrel, event.motion.yrel);
                     break;
 
+                case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                    m_renderer.OnWindowResized();
+                    break;
+
                 case SDL_EVENT_KEY_DOWN:
                     if (event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat) {
                         m_mode = (m_mode == AppMode::Game) ? AppMode::Debug : AppMode::Game;
                         SDL_SetWindowRelativeMouseMode(
                             m_window.GetNativeWindow(), m_mode == AppMode::Game);
                     } else if (event.key.scancode == SDL_SCANCODE_F5 && !event.key.repeat) {
-                        m_renderer.ReloadChangedAssets();
+                        m_scene.ReloadChangedAssets();
                     }
                     break;
 
@@ -79,12 +85,12 @@ namespace Engine {
     }
 
     void Application::Update(float deltaTime) {
-        m_renderer.Update(deltaTime, m_input, m_mode);
+        m_scene.Update(deltaTime, m_input, m_mode);
     }
 
     void Application::Render() {
         if (m_renderer.BeginFrame()) {
-            m_renderer.Render(m_mode);
+            m_renderer.Render(m_scene, m_mode);
             m_renderer.EndFrame();
         }
     }

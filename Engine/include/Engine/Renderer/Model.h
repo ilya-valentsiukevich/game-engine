@@ -28,7 +28,7 @@ namespace Engine {
         Model(const Model &) = delete;
         Model &operator=(const Model &) = delete;
 
-        void Draw(SDL_GPURenderPass *renderPass) const;
+        void Draw(SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass *renderPass) const;
 
     private:
         // ~Model() must be defined in Model.cpp (not defaulted here): it
