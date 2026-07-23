@@ -14,6 +14,7 @@ add_library(Engine STATIC
         src/Renderer/Material.cpp
         src/Renderer/Model.cpp
         src/ECS/Transform.cpp
+        src/ECS/Systems.cpp
         src/Scene/SceneNode.cpp
         src/Scene/Scene.cpp
         src/Assets/AssetManager.cpp
