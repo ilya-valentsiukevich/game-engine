@@ -4,13 +4,13 @@ using namespace metal;
 struct VSInput
 {
     float3 Position [[attribute(0)]];
-    float3 Color    [[attribute(1)]];
+    float2 TexCoord [[attribute(1)]];
 };
 
 struct VSOutput
 {
     float4 Position [[position]];
-    float3 Color;
+    float2 TexCoord;
 };
 
 struct UniformBlock
@@ -24,7 +24,7 @@ vertex VSOutput main0(VSInput in [[stage_in]],
     VSOutput out;
 
     out.Position = uniforms.MVP * float4(in.Position, 1.0);
-    out.Color = in.Color;
+    out.TexCoord = in.TexCoord;
 
     return out;
 }

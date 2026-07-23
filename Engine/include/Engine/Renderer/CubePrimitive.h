@@ -9,41 +9,44 @@
 #include <array>
 
 namespace Engine {
-    // Unit cube (half-extent 0.5) centered at the origin. Flat per-face
-    // shading needs 4 unique vertices per face (24 total) since a shared
-    // corner vertex would need a different color depending on which face
-    // it belongs to.
+    // Unit cube (half-extent 0.5) centered at the origin. 24 vertices (4 per
+    // face) for the same reason M2 needed them for flat per-face color: a
+    // shared corner vertex can't have two different UV origins depending on
+    // which face it belongs to. Every face uses the identical UV pattern
+    // below because every face's 4 vertices are wound the same way
+    // (bottom-left, bottom-right, top-right, top-left in the face's own
+    // local frame) — see M4-textures.md.
     inline constexpr std::array<Vertex, 24> kCubeVertices{
-        // +Z (front) — red
-        Vertex{{-0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}},
-        Vertex{{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}},
-        Vertex{{0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}},
-        Vertex{{-0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}},
-        // -Z (back) — green
-        Vertex{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        Vertex{{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        Vertex{{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        Vertex{{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        // -X (left) — blue
-        Vertex{{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
-        Vertex{{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-        Vertex{{-0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-        Vertex{{-0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
-        // +X (right) — yellow
-        Vertex{{0.5f, -0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}},
-        Vertex{{0.5f, -0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}},
-        Vertex{{0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}},
-        Vertex{{0.5f, 0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}},
-        // +Y (top) — cyan
-        Vertex{{-0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}},
-        Vertex{{0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}},
-        Vertex{{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}},
-        Vertex{{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}},
-        // -Y (bottom) — magenta
-        Vertex{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}},
-        Vertex{{0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}},
-        Vertex{{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 1.0f}},
-        Vertex{{-0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 1.0f}},
+        // +Z (front)
+        Vertex{{-0.5f, -0.5f, 0.5f}, {0.0f, 1.0f}},
+        Vertex{{0.5f, -0.5f, 0.5f}, {1.0f, 1.0f}},
+        Vertex{{0.5f, 0.5f, 0.5f}, {1.0f, 0.0f}},
+        Vertex{{-0.5f, 0.5f, 0.5f}, {0.0f, 0.0f}},
+        // -Z (back)
+        Vertex{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f}},
+        Vertex{{-0.5f, -0.5f, -0.5f}, {1.0f, 1.0f}},
+        Vertex{{-0.5f, 0.5f, -0.5f}, {1.0f, 0.0f}},
+        Vertex{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f}},
+        // -X (left)
+        Vertex{{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f}},
+        Vertex{{-0.5f, -0.5f, 0.5f}, {1.0f, 1.0f}},
+        Vertex{{-0.5f, 0.5f, 0.5f}, {1.0f, 0.0f}},
+        Vertex{{-0.5f, 0.5f, -0.5f}, {0.0f, 0.0f}},
+        // +X (right)
+        Vertex{{0.5f, -0.5f, 0.5f}, {0.0f, 1.0f}},
+        Vertex{{0.5f, -0.5f, -0.5f}, {1.0f, 1.0f}},
+        Vertex{{0.5f, 0.5f, -0.5f}, {1.0f, 0.0f}},
+        Vertex{{0.5f, 0.5f, 0.5f}, {0.0f, 0.0f}},
+        // +Y (top)
+        Vertex{{-0.5f, 0.5f, 0.5f}, {0.0f, 1.0f}},
+        Vertex{{0.5f, 0.5f, 0.5f}, {1.0f, 1.0f}},
+        Vertex{{0.5f, 0.5f, -0.5f}, {1.0f, 0.0f}},
+        Vertex{{-0.5f, 0.5f, -0.5f}, {0.0f, 0.0f}},
+        // -Y (bottom)
+        Vertex{{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f}},
+        Vertex{{0.5f, -0.5f, -0.5f}, {1.0f, 1.0f}},
+        Vertex{{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f}},
+        Vertex{{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f}},
     };
 
     inline constexpr std::array<Uint16, 36> kCubeIndices{

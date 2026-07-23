@@ -4,10 +4,12 @@ using namespace metal;
 struct PSInput
 {
     float4 Position [[position]];
-    float3 Color;
+    float2 TexCoord;
 };
 
-fragment float4 main0(PSInput in [[stage_in]])
+fragment float4 main0(PSInput in [[stage_in]],
+                       texture2d<float> diffuseTexture [[texture(0)]],
+                       sampler diffuseSampler [[sampler(0)]])
 {
-    return float4(in.Color, 1.0);
+    return diffuseTexture.sample(diffuseSampler, in.TexCoord);
 }

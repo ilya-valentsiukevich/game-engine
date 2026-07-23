@@ -6,6 +6,7 @@
     "glm",
     "spdlog",
     "entt",
-    "sdl3"
+    "sdl3",
+    "stb"
   ]
 }
