@@ -25,6 +25,13 @@ namespace Engine {
         Texture(const Texture &) = delete;
         Texture &operator=(const Texture &) = delete;
 
+        // Re-decodes the same file and replaces the GPU texture in place —
+        // existing AssetHandle<Texture> holders keep the same Texture
+        // object, so they pick up the new pixels on their very next Get().
+        // Only makes sense for a texture originally loaded from a file, not
+        // from in-memory encoded bytes (the other constructor above).
+        void Reload(SDL_GPUDevice *device, const std::filesystem::path &path);
+
         SDL_GPUTexture *Get() const {
             return m_texture.Get();
         }
