@@ -3,14 +3,16 @@
 //
 #pragma once
 
-#include <Engine/Renderer/GPUResource.h>
-
 #include <SDL3/SDL.h>
-#include <filesystem>
 #include <memory>
 
 class GPUDevice;
 class Window;
+class Pipeline;
+struct Vertex;
+
+template<typename T>
+class Buffer;
 
 class Renderer {
 public:
@@ -26,17 +28,6 @@ public:
 
     void Render();
 
-    bool LoadShaders();
-
-    bool CreatePipeline();
-
-    bool CreateVertexBuffer();
-
-private:
-    GPUShaderHandle CreateShader(
-        const std::filesystem::path &path,
-        SDL_GPUShaderStage stage);
-
 private:
     Window *m_window = nullptr;
 
@@ -49,9 +40,6 @@ private:
     SDL_GPUTexture *m_swapchainTexture = nullptr;
     SDL_GPURenderPass *m_renderPass = nullptr;
 
-    GPUShaderHandle m_vertexShader;
-    GPUShaderHandle m_fragmentShader;
-
-    GPUPipelineHandle m_pipeline;
-    GPUBufferHandle m_vertexBuffer;
+    std::unique_ptr<Pipeline> m_pipeline;
+    std::unique_ptr<Buffer<Vertex> > m_vertexBuffer;
 };

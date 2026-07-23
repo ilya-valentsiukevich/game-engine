@@ -3,8 +3,10 @@ add_library(Engine STATIC
         src/Core/SDLContext.cpp
         src/Window/Window.cpp
         src/Renderer/Renderer.cpp
-        src/Assets/ShaderLoader/ShaderLoader.cpp
         src/Renderer/GPUDevice.cpp
+        src/Renderer/Shader.cpp
+        src/Renderer/Pipeline.cpp
+        src/Assets/ShaderLoader/ShaderLoader.cpp
 )
 
 target_include_directories(Engine
