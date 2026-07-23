@@ -4,6 +4,7 @@
 #pragma once
 
 #include <Engine/Assets/AssetManager.h>
+#include <Engine/Core/AppMode.h>
 #include <Engine/Core/Input.h>
 #include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Renderer/GPUResource.h>
@@ -18,6 +19,7 @@ namespace Engine {
     class Window;
     class Pipeline;
     class Sampler;
+    class DebugUI;
 
     class Renderer {
     public:
@@ -31,13 +33,16 @@ namespace Engine {
 
         void EndFrame();
 
-        void Update(float deltaTime, Input &input);
+        // Camera only reacts to input in AppMode::Game — see AppMode.h.
+        void Update(float deltaTime, Input &input, AppMode mode);
 
-        void Render();
+        void Render(AppMode mode);
 
         // Re-stats every cached asset (currently: Textures) and swaps in
         // any that changed on disk since the last load or reload.
         void ReloadChangedAssets();
+
+        void ProcessDebugUIEvent(const SDL_Event &event);
 
     private:
         Window *m_window = nullptr;
@@ -55,6 +60,7 @@ namespace Engine {
 
         std::unique_ptr<Pipeline> m_pipeline;
         std::unique_ptr<Sampler> m_sampler;
+        std::unique_ptr<DebugUI> m_debugUI;
 
         AssetManager m_assets;
 

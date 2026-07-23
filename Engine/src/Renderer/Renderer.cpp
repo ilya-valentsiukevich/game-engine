@@ -10,6 +10,7 @@
 #include <Engine/Renderer/Camera.h>
 #include <Engine/Renderer/Light.h>
 #include <Engine/Renderer/Sampler.h>
+#include <Engine/Renderer/DebugUI.h>
 #include <Engine/Window/Window.h>
 #include <Engine/ECS/Components.h>
 #include <Engine/ECS/Systems.h>
@@ -88,11 +89,15 @@ namespace Engine {
             SDL_GPU_FILTER_LINEAR,
             SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
 
+        m_debugUI = std::make_unique<DebugUI>(*m_window, m_device->Get(), colorFormat);
+
         m_cameraEntity = m_registry.create();
         m_registry.emplace<Camera>(m_cameraEntity);
+        m_registry.emplace<Name>(m_cameraEntity, "Camera");
 
         m_lightEntity = m_registry.create();
         m_registry.emplace<DirectionalLight>(m_lightEntity);
+        m_registry.emplace<Name>(m_lightEntity, "Sun");
 
         struct DioramaCharacter {
             const char *name;
@@ -131,6 +136,7 @@ namespace Engine {
 
             m_registry.emplace<MeshRenderer>(entity, std::move(model));
             m_registry.emplace<Spin>(entity, glm::vec3(0.0f, 1.0f, 0.0f), kPlatformSpinSpeed);
+            m_registry.emplace<Name>(entity, character.name);
         }
     }
 
@@ -223,8 +229,9 @@ namespace Engine {
             m_window->GetNativeWindow());
     }
 
-    void Renderer::Update(float deltaTime, Input &input) {
-        m_registry.get<Camera>(m_cameraEntity).Update(deltaTime, input);
+    void Renderer::Update(float deltaTime, Input &input, AppMode mode) {
+        if (mode == AppMode::Game)
+            m_registry.get<Camera>(m_cameraEntity).Update(deltaTime, input);
 
         RotateSystem(m_registry, deltaTime);
 
@@ -238,9 +245,11 @@ namespace Engine {
             std::cos(m_lightAngle), -0.6f, std::sin(m_lightAngle)));
     }
 
-    void Renderer::Render() {
+    void Renderer::Render(AppMode mode) {
         if (!m_renderPass)
             return;
+
+        m_debugUI->Draw(m_registry, mode);
 
         SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline->Get());
 
@@ -274,9 +283,30 @@ namespace Engine {
         SDL_PushGPUFragmentUniformData(m_commandBuffer, 0, &lightUniform, sizeof(lightUniform));
 
         RenderSystem(m_registry, m_commandBuffer, m_renderPass, viewProjection);
+
+        SDL_EndGPURenderPass(m_renderPass);
+        m_renderPass = nullptr;
+
+        m_debugUI->FinalizeDrawData(m_commandBuffer);
+
+        SDL_GPUColorTargetInfo uiColorTarget{};
+        uiColorTarget.texture = m_swapchainTexture;
+        uiColorTarget.load_op = SDL_GPU_LOADOP_LOAD;
+        uiColorTarget.store_op = SDL_GPU_STOREOP_STORE;
+
+        SDL_GPURenderPass *uiRenderPass =
+                SDL_BeginGPURenderPass(m_commandBuffer, &uiColorTarget, 1, nullptr);
+
+        m_debugUI->RenderDrawData(m_commandBuffer, uiRenderPass);
+
+        SDL_EndGPURenderPass(uiRenderPass);
     }
 
     void Renderer::ReloadChangedAssets() {
         m_assets.ReloadChanged();
+    }
+
+    void Renderer::ProcessDebugUIEvent(const SDL_Event &event) {
+        m_debugUI->ProcessEvent(event);
     }
 }

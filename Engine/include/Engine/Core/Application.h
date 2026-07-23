@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <Engine/Core/AppMode.h>
 #include <Engine/Core/SDLContext.h>
 #include <Engine/Core/Input.h>
 #include <Engine/Window/Window.h>
@@ -39,5 +40,6 @@ namespace Engine {
         Renderer m_renderer;
 
         Input m_input;
+        AppMode m_mode = AppMode::Game;
     };
 }

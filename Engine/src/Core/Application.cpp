@@ -10,7 +10,7 @@
 namespace Engine {
     Application::Application()
         : m_window("My Engine", 1280, 720), m_renderer(m_window) {
-        SDL_SetWindowRelativeMouseMode(m_window.GetNativeWindow(), true);
+        SDL_SetWindowRelativeMouseMode(m_window.GetNativeWindow(), m_mode == AppMode::Game);
     }
 
     void Application::Run() {
@@ -50,20 +50,23 @@ namespace Engine {
         SDL_Event event;
 
         while (SDL_PollEvent(&event)) {
+            m_renderer.ProcessDebugUIEvent(event);
+
             switch (event.type) {
                 case SDL_EVENT_QUIT:
                     m_running = false;
                     break;
 
                 case SDL_EVENT_MOUSE_MOTION:
-                    m_input.OnMouseMotion(event.motion.xrel, event.motion.yrel);
+                    if (m_mode == AppMode::Game)
+                        m_input.OnMouseMotion(event.motion.xrel, event.motion.yrel);
                     break;
 
                 case SDL_EVENT_KEY_DOWN:
                     if (event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat) {
-                        const bool captured =
-                                SDL_GetWindowRelativeMouseMode(m_window.GetNativeWindow());
-                        SDL_SetWindowRelativeMouseMode(m_window.GetNativeWindow(), !captured);
+                        m_mode = (m_mode == AppMode::Game) ? AppMode::Debug : AppMode::Game;
+                        SDL_SetWindowRelativeMouseMode(
+                            m_window.GetNativeWindow(), m_mode == AppMode::Game);
                     } else if (event.key.scancode == SDL_SCANCODE_F5 && !event.key.repeat) {
                         m_renderer.ReloadChangedAssets();
                     }
@@ -76,12 +79,12 @@ namespace Engine {
     }
 
     void Application::Update(float deltaTime) {
-        m_renderer.Update(deltaTime, m_input);
+        m_renderer.Update(deltaTime, m_input, m_mode);
     }
 
     void Application::Render() {
         if (m_renderer.BeginFrame()) {
-            m_renderer.Render();
+            m_renderer.Render(m_mode);
             m_renderer.EndFrame();
         }
     }
