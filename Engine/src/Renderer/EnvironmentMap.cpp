@@ -317,7 +317,7 @@ namespace Engine {
             }
 
             const Shader lutVertexShader(
-                device, "Assets/Shaders/Compiled/BRDFIntegration.vert.msl",
+                device, "Assets/Shaders/Compiled/Fullscreen.vert.msl",
                 SDL_GPU_SHADERSTAGE_VERTEX, 0);
             const Shader lutFragmentShader(
                 device, "Assets/Shaders/Compiled/BRDFIntegration.frag.msl",

@@ -11,13 +11,8 @@ fragment float4 main0(VSOutput in [[stage_in]],
                        texturecube<float> environmentMap [[texture(0)]],
                        sampler environmentSampler [[sampler(0)]])
 {
-    float3 color = environmentMap.sample(environmentSampler, normalize(in.WorldDirection)).rgb;
-
-    // Cheap Reinhard + gamma — an HDRI's sun disk is far above 1.0 in
-    // linear light and would clip to flat white without this. Mesh.frag.msl
-    // gets the same treatment on its final output.
-    color = color / (color + float3(1.0));
-    color = pow(color, float3(1.0 / 2.2));
-
-    return float4(color, 1.0);
+    // Written straight into an HDR render target — stays linear and
+    // unclamped (an HDRI's sun disk is often far above 1.0) for
+    // Composite.frag.msl's tone mapping and bloom to handle centrally.
+    return float4(environmentMap.sample(environmentSampler, normalize(in.WorldDirection)).rgb, 1.0);
 }

@@ -1,0 +1,45 @@
+#include <metal_stdlib>
+using namespace metal;
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float2 TexCoord;
+};
+
+struct UniformBlock
+{
+    float4 Params; // x: exposure, y: bloom intensity, z: bloom enabled (0/1), w: unused
+};
+
+// Narkowicz's fitted approximation of the ACES filmic tone curve — the
+// same characteristic S-curve the full ACES pipeline produces, without
+// needing that pipeline.
+float3 ACESFilm(float3 x)
+{
+    float a = 2.51;
+    float b = 0.03;
+    float c = 2.43;
+    float d = 0.59;
+    float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+fragment float4 main0(VSOutput in [[stage_in]],
+                       constant UniformBlock &uniforms [[buffer(0)]],
+                       texture2d<float> sceneTexture [[texture(0)]],
+                       sampler sceneSampler [[sampler(0)]],
+                       texture2d<float> bloomTexture [[texture(1)]],
+                       sampler bloomSampler [[sampler(1)]])
+{
+    float3 color = sceneTexture.sample(sceneSampler, in.TexCoord).rgb;
+
+    if (uniforms.Params.z > 0.5)
+        color += bloomTexture.sample(bloomSampler, in.TexCoord).rgb * uniforms.Params.y;
+
+    color *= uniforms.Params.x; // exposure
+    color = ACESFilm(color);
+    color = pow(color, float3(1.0 / 2.2));
+
+    return float4(color, 1.0);
+}

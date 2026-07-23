@@ -1,0 +1,30 @@
+#include <metal_stdlib>
+using namespace metal;
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float2 TexCoord;
+};
+
+struct UniformBlock
+{
+    float Threshold;
+};
+
+fragment float4 main0(VSOutput in [[stage_in]],
+                       constant UniformBlock &uniforms [[buffer(0)]],
+                       texture2d<float> hdrTexture [[texture(0)]],
+                       sampler hdrSampler [[sampler(0)]])
+{
+    float3 color = hdrTexture.sample(hdrSampler, in.TexCoord).rgb;
+
+    // Rec. 709 luminance weights — a per-channel threshold would let a
+    // single saturated-but-dim channel (e.g. pure blue at moderate
+    // brightness) trigger bloom on its own, which reads as a color-fringed
+    // artifact rather than "this pixel is bright".
+    float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
+    float3 result = luminance > uniforms.Threshold ? color : float3(0.0);
+
+    return float4(result, 1.0);
+}

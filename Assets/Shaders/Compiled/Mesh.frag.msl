@@ -302,13 +302,10 @@ fragment float4 main0(PSInput in [[stage_in]],
         result += ShadePBR(N, V, L, spotLight.Color.xyz, attenuation, albedo, metallic, roughness, F0);
     }
 
-    // Reinhard tone mapping: IBL's specular ambient can push result well
-    // above 1.0 (a bright sky reflected off a smooth metal), which would
-    // otherwise clip to flat white. Lighting above is computed in linear
-    // space; the swapchain expects gamma-encoded output, so encode once
-    // here at the very end.
-    result = result / (result + float3(1.0));
-    float3 gammaCorrected = pow(result, float3(1.0 / 2.2));
-
-    return float4(gammaCorrected, baseColor.a);
+    // Tone mapping and gamma correction now happen once, centrally, in
+    // Composite.frag.msl — this shader writes straight into an HDR render
+    // target, so `result` intentionally stays linear and unclamped
+    // (values above 1.0, e.g. a bright sky reflected off a smooth metal,
+    // are exactly what the post-process bloom pass looks for).
+    return float4(result, baseColor.a);
 }

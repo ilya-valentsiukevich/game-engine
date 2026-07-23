@@ -39,7 +39,8 @@ namespace Engine {
         ImGui_ImplSDL3_ProcessEvent(&event);
     }
 
-    void DebugUI::Draw(entt::registry &registry, AppMode mode, IBLSettings &iblSettings) {
+    void DebugUI::Draw(entt::registry &registry, AppMode mode, IBLSettings &iblSettings,
+                        PostProcessSettings &postProcessSettings) {
         ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
@@ -50,6 +51,7 @@ namespace Engine {
             DrawEntityList(registry);
             DrawInspector(registry);
             DrawIBLSettings(iblSettings);
+            DrawPostProcessSettings(postProcessSettings);
         }
     }
 
@@ -211,6 +213,21 @@ namespace Engine {
         ImGui::SliderFloat("Min Ambient Roughness", &iblSettings.MinAmbientRoughness, 0.0f, 1.0f);
         ImGui::SliderFloat("Max Reflection LOD", &iblSettings.MaxReflectionLod, 0.0f, 8.0f);
         ImGui::SliderFloat("Ambient Intensity", &iblSettings.AmbientIntensity, 0.0f, 3.0f);
+        ImGui::EndDisabled();
+
+        ImGui::End();
+    }
+
+    void DebugUI::DrawPostProcessSettings(PostProcessSettings &settings) {
+        ImGui::Begin("Post-Processing");
+
+        ImGui::SliderFloat("Exposure", &settings.Exposure, 0.0f, 4.0f);
+
+        ImGui::Checkbox("Bloom Enabled", &settings.BloomEnabled);
+
+        ImGui::BeginDisabled(!settings.BloomEnabled);
+        ImGui::SliderFloat("Bloom Threshold", &settings.BloomThreshold, 0.0f, 5.0f);
+        ImGui::SliderFloat("Bloom Intensity", &settings.BloomIntensity, 0.0f, 2.0f);
         ImGui::EndDisabled();
 
         ImGui::End();
