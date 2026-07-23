@@ -3,14 +3,11 @@
 //
 #pragma once
 
-#include <Engine/Assets/AssetManager.h>
 #include <Engine/Core/AppMode.h>
-#include <Engine/Core/Input.h>
 #include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Renderer/GPUResource.h>
 
 #include <SDL3/SDL.h>
-#include <entt/entt.hpp>
 #include <glm/glm.hpp>
 #include <memory>
 
@@ -20,6 +17,7 @@ namespace Engine {
     class Pipeline;
     class Sampler;
     class DebugUI;
+    class Scene;
 
     class Renderer {
     public:
@@ -33,14 +31,10 @@ namespace Engine {
 
         void EndFrame();
 
-        // Camera only reacts to input in AppMode::Game — see AppMode.h.
-        void Update(float deltaTime, Input &input, AppMode mode);
-
-        void Render(AppMode mode);
-
-        // Re-stats every cached asset (currently: Textures) and swaps in
-        // any that changed on disk since the last load or reload.
-        void ReloadChangedAssets();
+        // Reads Scene's registry to draw the frame; not const because
+        // DebugUI's inspector (drawn as part of this same pass) edits
+        // component values in place — see DebugUI::DrawInspector.
+        void Render(Scene &scene, AppMode mode);
 
         void ProcessDebugUIEvent(const SDL_Event &event);
 
@@ -49,6 +43,13 @@ namespace Engine {
         // changed. Safe to call between frames only — never while a render
         // pass referencing the old target is still open.
         void OnWindowResized();
+
+        // Non-owning access to the GPU device and default sampler backing
+        // this renderer's pipeline — threaded into Scene so it can turn
+        // asset paths into GPU-backed models without Scene owning any GPU
+        // objects itself.
+        SDL_GPUDevice *GetDevice() const;
+        const Sampler &GetDefaultSampler() const;
 
     private:
         static constexpr SDL_GPUTextureFormat kDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
@@ -71,22 +72,5 @@ namespace Engine {
         std::unique_ptr<Pipeline> m_pipeline;
         std::unique_ptr<Sampler> m_sampler;
         std::unique_ptr<DebugUI> m_debugUI;
-
-        AssetManager m_assets;
-
-        // Owns every entity in the scene: the diorama characters
-        // (Transform + MeshRenderer + Spin), the camera (Camera) and the
-        // light (DirectionalLight). Declared after m_device/m_assets so it
-        // is destroyed first, while the GPU device backing any AssetHandle
-        // still held by a MeshRenderer component is still alive.
-        entt::registry m_registry;
-
-        // Convenience handles for the one camera and one light entity this
-        // milestone creates, so Update()/Render() don't have to search the
-        // registry for them every frame.
-        entt::entity m_cameraEntity = entt::null;
-        entt::entity m_lightEntity = entt::null;
-
-        float m_lightAngle = 0.0f;
     };
 }

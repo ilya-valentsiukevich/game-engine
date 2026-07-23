@@ -6,7 +6,6 @@
 #include <Engine/Renderer/GPUDevice.h>
 #include <Engine/Renderer/Shader.h>
 #include <Engine/Renderer/Pipeline.h>
-#include <Engine/Renderer/Model.h>
 #include <Engine/Renderer/Camera.h>
 #include <Engine/Renderer/Light.h>
 #include <Engine/Renderer/Sampler.h>
@@ -14,15 +13,11 @@
 #include <Engine/Window/Window.h>
 #include <Engine/ECS/Components.h>
 #include <Engine/ECS/Systems.h>
-#include <Engine/ECS/Transform.h>
+#include <Engine/Scene/Scene.h>
 
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/quaternion.hpp>
 
-#include <cmath>
 #include <format>
-#include <iterator>
 
 namespace Engine {
     Renderer::Renderer(Window &window)
@@ -72,54 +67,6 @@ namespace Engine {
             SDL_GPU_SAMPLERADDRESSMODE_REPEAT);
 
         m_debugUI = std::make_unique<DebugUI>(*m_window, m_device->Get(), colorFormat);
-
-        m_cameraEntity = m_registry.create();
-        m_registry.emplace<Camera>(m_cameraEntity);
-        m_registry.emplace<Name>(m_cameraEntity, "Camera");
-
-        m_lightEntity = m_registry.create();
-        m_registry.emplace<DirectionalLight>(m_lightEntity);
-        m_registry.emplace<Name>(m_lightEntity, "Sun");
-
-        struct DioramaCharacter {
-            const char *name;
-            const char *modelPath;
-        };
-
-        constexpr DioramaCharacter kDioramaCharacters[] = {
-            {"Knight", "Assets/Models/Knight/Knight.glb"},
-            {"Barbarian", "Assets/Models/Barbarian/Barbarian.glb"},
-            {"Mage", "Assets/Models/Mage/Mage.glb"},
-            {"Ranger", "Assets/Models/Ranger/Ranger.glb"},
-            {"Rogue", "Assets/Models/Rogue/Rogue_Hooded.glb"},
-        };
-        constexpr int kCharacterCount =
-                static_cast<int>(std::size(kDioramaCharacters));
-        constexpr float kRadius = 3.0f;
-        constexpr float kPlatformSpinSpeed = glm::radians(30.0f); // rad/sec
-
-        for (int i = 0; i < kCharacterCount; ++i) {
-            const DioramaCharacter &character = kDioramaCharacters[i];
-
-            AssetHandle<Model> model = m_assets.Models.Load(
-                character.modelPath,
-                [this, path = std::filesystem::path(character.modelPath)] {
-                    return std::make_shared<Model>(m_device->Get(), path, *m_sampler, m_assets);
-                });
-
-            const float angle =
-                    glm::radians(360.0f / static_cast<float>(kCharacterCount) * static_cast<float>(i));
-
-            const entt::entity entity = m_registry.create();
-
-            Transform &transform = m_registry.emplace<Transform>(entity);
-            transform.Position = glm::vec3(std::cos(angle) * kRadius, 0.0f, std::sin(angle) * kRadius);
-            transform.Rotation = glm::angleAxis(-angle, glm::vec3(0.0f, 1.0f, 0.0f));
-
-            m_registry.emplace<MeshRenderer>(entity, std::move(model));
-            m_registry.emplace<Spin>(entity, glm::vec3(0.0f, 1.0f, 0.0f), kPlatformSpinSpeed);
-            m_registry.emplace<Name>(entity, character.name);
-        }
     }
 
     bool Renderer::BeginFrame() {
@@ -203,35 +150,21 @@ namespace Engine {
         if (!m_device)
             return;
 
-        // m_depthTexture/m_pipeline/m_sampler/m_registry release themselves
-        // via their own destructors (declared after m_device, so they run
-        // first). m_device itself is destroyed last.
+        // m_depthTexture/m_pipeline/m_sampler release themselves via their
+        // own destructors (declared after m_device, so they run first).
+        // m_device itself is destroyed last.
         SDL_ReleaseWindowFromGPUDevice(
             m_device->Get(),
             m_window->GetNativeWindow());
     }
 
-    void Renderer::Update(float deltaTime, Input &input, AppMode mode) {
-        if (mode == AppMode::Game)
-            m_registry.get<Camera>(m_cameraEntity).Update(deltaTime, input);
-
-        RotateSystem(m_registry, deltaTime);
-
-        // Slow arc across the sky around the diorama's vertical axis, tilted
-        // down toward the ground — a primitive day/night cycle.
-        constexpr float kLightRotationSpeed = glm::radians(6.0f); // rad/sec
-        m_lightAngle += kLightRotationSpeed * deltaTime;
-
-        DirectionalLight &light = m_registry.get<DirectionalLight>(m_lightEntity);
-        light.Direction = glm::normalize(glm::vec3(
-            std::cos(m_lightAngle), -0.6f, std::sin(m_lightAngle)));
-    }
-
-    void Renderer::Render(AppMode mode) {
+    void Renderer::Render(Scene &scene, AppMode mode) {
         if (!m_renderPass)
             return;
 
-        m_debugUI->Draw(m_registry, mode);
+        entt::registry &registry = scene.Registry();
+
+        m_debugUI->Draw(registry, mode);
 
         SDL_BindGPUGraphicsPipeline(m_renderPass, m_pipeline->Get());
 
@@ -241,12 +174,18 @@ namespace Engine {
         const float aspectRatio =
                 static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
 
-        const Camera &camera = m_registry.get<Camera>(m_cameraEntity);
+        // Assumes exactly one entity tagged ActiveCamera and one
+        // DirectionalLight entity exist — enforced by whoever builds the
+        // scene (see Game/main.cpp), not re-validated here every frame.
+        const auto cameraView = registry.view<Camera, ActiveCamera>();
+        const Camera &camera = registry.get<Camera>(*cameraView.begin());
+
         const glm::mat4 view = camera.GetViewMatrix();
         const glm::mat4 projection = camera.GetProjectionMatrix(aspectRatio);
         const glm::mat4 viewProjection = projection * view;
 
-        const DirectionalLight &light = m_registry.get<DirectionalLight>(m_lightEntity);
+        const auto lightView = registry.view<DirectionalLight>();
+        const DirectionalLight &light = registry.get<DirectionalLight>(*lightView.begin());
 
         struct LightUniformBlock {
             glm::vec4 Direction;
@@ -264,7 +203,7 @@ namespace Engine {
 
         SDL_PushGPUFragmentUniformData(m_commandBuffer, 0, &lightUniform, sizeof(lightUniform));
 
-        RenderSystem(m_registry, m_commandBuffer, m_renderPass, viewProjection);
+        RenderSystem(registry, m_commandBuffer, m_renderPass, viewProjection);
 
         SDL_EndGPURenderPass(m_renderPass);
         m_renderPass = nullptr;
@@ -284,10 +223,6 @@ namespace Engine {
         SDL_EndGPURenderPass(uiRenderPass);
     }
 
-    void Renderer::ReloadChangedAssets() {
-        m_assets.ReloadChanged();
-    }
-
     void Renderer::ProcessDebugUIEvent(const SDL_Event &event) {
         m_debugUI->ProcessEvent(event);
     }
@@ -301,6 +236,14 @@ namespace Engine {
             return;
 
         CreateDepthTexture(static_cast<Uint32>(windowWidth), static_cast<Uint32>(windowHeight));
+    }
+
+    SDL_GPUDevice *Renderer::GetDevice() const {
+        return m_device->Get();
+    }
+
+    const Sampler &Renderer::GetDefaultSampler() const {
+        return *m_sampler;
     }
 
     void Renderer::CreateDepthTexture(Uint32 width, Uint32 height) {
