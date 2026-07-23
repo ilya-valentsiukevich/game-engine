@@ -33,8 +33,8 @@ namespace Engine {
 
         vertexAttributes[1].location = 1;
         vertexAttributes[1].buffer_slot = 0;
-        vertexAttributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-        vertexAttributes[1].offset = offsetof(Vertex, Color);
+        vertexAttributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+        vertexAttributes[1].offset = offsetof(Vertex, TexCoord);
 
         SDL_GPUGraphicsPipelineCreateInfo pipelineCreateInfo{};
         pipelineCreateInfo.vertex_shader = vertexShader.Get();
