@@ -55,6 +55,18 @@ namespace Engine {
                     m_running = false;
                     break;
 
+                case SDL_EVENT_MOUSE_MOTION:
+                    m_input.OnMouseMotion(event.motion.xrel, event.motion.yrel);
+                    break;
+
+                case SDL_EVENT_KEY_DOWN:
+                    if (event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat) {
+                        const bool captured =
+                                SDL_GetWindowRelativeMouseMode(m_window.GetNativeWindow());
+                        SDL_SetWindowRelativeMouseMode(m_window.GetNativeWindow(), !captured);
+                    }
+                    break;
+
                 default:
                     break;
             }
@@ -62,12 +74,13 @@ namespace Engine {
     }
 
     void Application::Update(float deltaTime) {
+        m_camera.Update(deltaTime, m_input);
         m_renderer.Update(deltaTime);
     }
 
     void Application::Render() {
         if (m_renderer.BeginFrame()) {
-            m_renderer.Render();
+            m_renderer.Render(m_camera);
             m_renderer.EndFrame();
         }
     }
