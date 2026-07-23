@@ -64,6 +64,8 @@ namespace Engine {
                         const bool captured =
                                 SDL_GetWindowRelativeMouseMode(m_window.GetNativeWindow());
                         SDL_SetWindowRelativeMouseMode(m_window.GetNativeWindow(), !captured);
+                    } else if (event.key.scancode == SDL_SCANCODE_F5 && !event.key.repeat) {
+                        m_renderer.ReloadChangedAssets();
                     }
                     break;
 
