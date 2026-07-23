@@ -44,7 +44,7 @@ namespace Engine {
             m_device->Get(),
             "Assets/Shaders/Compiled/Mesh.frag.msl",
             SDL_GPU_SHADERSTAGE_FRAGMENT,
-            0,  // numUniformBuffers
+            1,  // numUniformBuffers
             1); // numSamplers
 
         const SDL_GPUTextureFormat colorFormat = SDL_GetGPUSwapchainTextureFormat(
@@ -228,6 +228,14 @@ namespace Engine {
                     glm::angleAxis(m_platformRotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
         }
 
+        // Slow arc across the sky around the diorama's vertical axis, tilted
+        // down toward the ground — a primitive day/night cycle.
+        constexpr float kLightRotationSpeed = glm::radians(6.0f); // rad/sec
+        m_lightAngle += kLightRotationSpeed * deltaTime;
+
+        m_light.Direction = glm::normalize(glm::vec3(
+            std::cos(m_lightAngle), -0.6f, std::sin(m_lightAngle)));
+
         m_scene.Update();
     }
 
@@ -247,13 +255,36 @@ namespace Engine {
         const glm::mat4 projection = camera.GetProjectionMatrix(aspectRatio);
         const glm::mat4 viewProjection = projection * view;
 
+        struct LightUniformBlock {
+            glm::vec4 Direction;
+            glm::vec4 Color;
+            glm::vec4 ViewPosition;
+            glm::vec4 Params; // x: ambient, y: specular, z: shininess, w: unused
+        };
+
+        const LightUniformBlock lightUniform{
+            glm::vec4(m_light.Direction, 0.0f),
+            glm::vec4(m_light.Color, 0.0f),
+            glm::vec4(camera.GetPosition(), 0.0f),
+            glm::vec4(m_light.AmbientStrength, m_light.SpecularStrength, m_light.Shininess, 0.0f),
+        };
+
+        SDL_PushGPUFragmentUniformData(m_commandBuffer, 0, &lightUniform, sizeof(lightUniform));
+
         DrawNode(m_scene.GetRoot(), viewProjection);
     }
 
     void Renderer::DrawNode(const SceneNode &node, const glm::mat4 &viewProjection) {
         if (node.AttachedModel) {
-            const glm::mat4 mvp = viewProjection * node.GetWorldMatrix();
-            SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &mvp, sizeof(mvp));
+            struct VertexUniformBlock {
+                glm::mat4 MVP;
+                glm::mat4 Model;
+            };
+
+            const glm::mat4 &model = node.GetWorldMatrix();
+            const VertexUniformBlock vertexUniform{viewProjection * model, model};
+
+            SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &vertexUniform, sizeof(vertexUniform));
             node.AttachedModel->Draw(m_renderPass);
         }
 
