@@ -7,6 +7,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <stdexcept>
@@ -24,6 +25,18 @@ namespace Engine {
                     stbi_image_free(pixels);
             }
         };
+
+        // Full mip chain length down to a 1x1 level, e.g. 256 -> 9 (256,
+        // 128, 64, 32, 16, 8, 4, 2, 1). A 1x1 texture (AssetManager's white
+        // fallback) correctly comes back as 1 — no chain needed.
+        Uint32 CalculateMipLevels(int width, int height) {
+            Uint32 levels = 1;
+
+            for (int largestDimension = std::max(width, height); largestDimension > 1; ++levels)
+                largestDimension /= 2;
+
+            return levels;
+        }
     }
 
     Texture::Texture(SDL_GPUDevice *device, const std::filesystem::path &path, SDL_GPUTextureFormat format)
@@ -80,15 +93,25 @@ namespace Engine {
     void Texture::UploadPixels(SDL_GPUDevice *device, const unsigned char *pixels, int width, int height) {
         const Uint32 pixelDataSize =
                 static_cast<Uint32>(width) * static_cast<Uint32>(height) * 4;
+        const Uint32 mipLevels = CalculateMipLevels(width, height);
 
         SDL_GPUTextureCreateInfo textureCreateInfo{};
         textureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
         textureCreateInfo.format = m_format;
         textureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+
+        // SDL_gpu generates each mip level by rendering the previous one
+        // into it, so the texture must also be usable as a color target —
+        // without this it asserts at the SDL_GenerateMipmapsForGPUTexture
+        // call below. Not needed for a single-level texture (nothing to
+        // generate into).
+        if (mipLevels > 1)
+            textureCreateInfo.usage |= SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+
         textureCreateInfo.width = static_cast<Uint32>(width);
         textureCreateInfo.height = static_cast<Uint32>(height);
         textureCreateInfo.layer_count_or_depth = 1;
-        textureCreateInfo.num_levels = 1;
+        textureCreateInfo.num_levels = mipLevels;
         textureCreateInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
 
         m_texture = GPUTextureHandle(
@@ -144,6 +167,14 @@ namespace Engine {
         SDL_UploadToGPUTexture(copyPass, &source, &destination, false);
 
         SDL_EndGPUCopyPass(copyPass);
+
+        // Must run outside of any pass (copy pass above has already ended)
+        // but is still fine on the same command buffer before it's
+        // submitted. Only mip level 0 was just uploaded; this fills in the
+        // rest of the chain from it.
+        if (mipLevels > 1)
+            SDL_GenerateMipmapsForGPUTexture(uploadCommandBuffer, m_texture.Get());
+
         SDL_SubmitGPUCommandBuffer(uploadCommandBuffer);
 
         // transferBuffer releases itself here (RAII), no manual call needed.

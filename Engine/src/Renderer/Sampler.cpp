@@ -14,10 +14,21 @@ namespace Engine {
         SDL_GPUSamplerCreateInfo createInfo{};
         createInfo.min_filter = filter;
         createInfo.mag_filter = filter;
-        createInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        createInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
         createInfo.address_mode_u = addressMode;
         createInfo.address_mode_v = addressMode;
         createInfo.address_mode_w = addressMode;
+
+        // Textures now carry a full mip chain (see Texture::UploadPixels).
+        // max_lod defaults to 0 when zero-initialized above, which would
+        // clamp every lookup to mip 0 regardless of how many levels the
+        // texture actually has — 1000 is the common "effectively
+        // unclamped" convention (cf. Vulkan's VK_LOD_CLAMP_NONE); the
+        // texture's real level count always caps it below that anyway.
+        createInfo.max_lod = 1000.0f;
+
+        createInfo.enable_anisotropy = true;
+        createInfo.max_anisotropy = 16.0f; // hardware clamps to its own max if lower
 
         m_sampler = GPUSamplerHandle(device, SDL_CreateGPUSampler(device, &createInfo));
 
