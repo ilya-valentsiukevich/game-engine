@@ -1,0 +1,38 @@
+#include <metal_stdlib>
+using namespace metal;
+
+struct VSInput
+{
+    float3 Position [[attribute(0)]];
+};
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float3 WorldDirection;
+};
+
+struct UniformBlock
+{
+    float4x4 ViewProjection;
+};
+
+vertex VSOutput main0(VSInput in [[stage_in]],
+                       constant UniformBlock &uniforms [[buffer(0)]])
+{
+    VSOutput out;
+
+    // The unit cube is centered at the origin, so a vertex's own local
+    // position already is the direction from the origin toward it — the
+    // one piece of data every fragment shader below actually needs.
+    out.WorldDirection = in.Position;
+    out.Position = uniforms.ViewProjection * float4(in.Position, 1.0);
+
+    // Pins every skybox fragment to the far plane after the perspective
+    // divide (z/w == 1.0). Harmless for the three precompute passes: they
+    // render into a target with no depth attachment at all, so nothing
+    // ever reads Position.z there.
+    out.Position.z = out.Position.w;
+
+    return out;
+}

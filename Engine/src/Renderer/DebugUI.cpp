@@ -3,6 +3,8 @@
 #include <Engine/ECS/Transform.h>
 #include <Engine/Renderer/Camera.h>
 #include <Engine/Renderer/Light.h>
+#include <Engine/Renderer/Model.h>
+#include <Engine/Renderer/Material.h>
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -10,6 +12,8 @@
 #include <imgui_stdlib.h>
 
 #include <glm/gtc/quaternion.hpp>
+
+#include <cstddef>
 
 namespace Engine {
     DebugUI::DebugUI(Window &window, SDL_GPUDevice *device, SDL_GPUTextureFormat colorFormat) {
@@ -35,7 +39,8 @@ namespace Engine {
         ImGui_ImplSDL3_ProcessEvent(&event);
     }
 
-    void DebugUI::Draw(entt::registry &registry, AppMode mode) {
+    void DebugUI::Draw(entt::registry &registry, AppMode mode, IBLSettings &iblSettings,
+                        PostProcessSettings &postProcessSettings) {
         ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
@@ -45,6 +50,8 @@ namespace Engine {
         if (mode == AppMode::Debug) {
             DrawEntityList(registry);
             DrawInspector(registry);
+            DrawIBLSettings(iblSettings);
+            DrawPostProcessSettings(postProcessSettings);
         }
     }
 
@@ -127,8 +134,34 @@ namespace Engine {
             }
         }
 
-        if (registry.all_of<MeshRenderer>(m_selectedEntity)) {
-            ImGui::BulletText("Has MeshRenderer");
+        if (MeshRenderer *meshRenderer = registry.try_get<MeshRenderer>(m_selectedEntity)) {
+            if (meshRenderer->Model &&
+                ImGui::CollapsingHeader("Materials", ImGuiTreeNodeFlags_DefaultOpen)) {
+                Model &model = *meshRenderer->Model;
+
+                for (std::size_t i = 0; i < model.GetPartCount(); ++i) {
+                    Material &material = model.GetMaterial(i);
+
+                    // "##<index>" disambiguates widget IDs between parts —
+                    // same reason DrawEntityList suffixes its own labels.
+                    ImGui::PushID(static_cast<int>(i));
+                    ImGui::Text("Part %zu", i);
+
+                    glm::vec4 baseColorFactor = material.GetBaseColorFactor();
+                    if (ImGui::ColorEdit4("Base Color Factor", &baseColorFactor.x))
+                        material.SetBaseColorFactor(baseColorFactor);
+
+                    float metallicFactor = material.GetMetallicFactor();
+                    if (ImGui::SliderFloat("Metallic Factor", &metallicFactor, 0.0f, 1.0f))
+                        material.SetMetallicFactor(metallicFactor);
+
+                    float roughnessFactor = material.GetRoughnessFactor();
+                    if (ImGui::SliderFloat("Roughness Factor", &roughnessFactor, 0.0f, 1.0f))
+                        material.SetRoughnessFactor(roughnessFactor);
+
+                    ImGui::PopID();
+                }
+            }
         }
 
         if (DirectionalLight *light = registry.try_get<DirectionalLight>(m_selectedEntity)) {
@@ -164,6 +197,38 @@ namespace Engine {
                 ImGui::SliderFloat("Outer Cone Angle", &spotLight->OuterConeAngleDegrees, 1.0f, 89.0f);
             }
         }
+
+        ImGui::End();
+    }
+
+    void DebugUI::DrawIBLSettings(IBLSettings &iblSettings) {
+        ImGui::Begin("IBL");
+
+        ImGui::Checkbox("Enabled", &iblSettings.Enabled);
+
+        // Tuning knobs only matter once IBL is actually on — dimming them
+        // when it's off is a hint, not a hard requirement, since Renderer
+        // still reads iblSettings every frame regardless.
+        ImGui::BeginDisabled(!iblSettings.Enabled);
+        ImGui::SliderFloat("Min Ambient Roughness", &iblSettings.MinAmbientRoughness, 0.0f, 1.0f);
+        ImGui::SliderFloat("Max Reflection LOD", &iblSettings.MaxReflectionLod, 0.0f, 8.0f);
+        ImGui::SliderFloat("Ambient Intensity", &iblSettings.AmbientIntensity, 0.0f, 3.0f);
+        ImGui::EndDisabled();
+
+        ImGui::End();
+    }
+
+    void DebugUI::DrawPostProcessSettings(PostProcessSettings &settings) {
+        ImGui::Begin("Post-Processing");
+
+        ImGui::SliderFloat("Exposure", &settings.Exposure, 0.0f, 4.0f);
+
+        ImGui::Checkbox("Bloom Enabled", &settings.BloomEnabled);
+
+        ImGui::BeginDisabled(!settings.BloomEnabled);
+        ImGui::SliderFloat("Bloom Threshold", &settings.BloomThreshold, 0.0f, 5.0f);
+        ImGui::SliderFloat("Bloom Intensity", &settings.BloomIntensity, 0.0f, 2.0f);
+        ImGui::EndDisabled();
 
         ImGui::End();
     }

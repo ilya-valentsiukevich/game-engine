@@ -10,6 +10,8 @@
 #include <Engine/Renderer/Light.h>
 #include <Engine/Renderer/Sampler.h>
 #include <Engine/Renderer/ShadowMap.h>
+#include <Engine/Renderer/EnvironmentMap.h>
+#include <Engine/Renderer/PostProcessSettings.h>
 #include <Engine/Renderer/DebugUI.h>
 #include <Engine/Window/Window.h>
 #include <Engine/ECS/Components.h>
@@ -19,6 +21,7 @@
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <format>
 
 namespace Engine {
@@ -82,7 +85,8 @@ namespace Engine {
             "Assets/Shaders/Compiled/Mesh.frag.msl",
             SDL_GPU_SHADERSTAGE_FRAGMENT,
             2,  // numUniformBuffers: buffer(0) LightUniformBlock, buffer(1) MaterialUniformBlock
-            3); // numSamplers: sampler(0) base color, sampler(1) metallic-roughness, sampler(2) shadow map
+            6); // numSamplers: sampler(0) base color, (1) metallic-roughness, (2) shadow map,
+                // (3) irradiance, (4) prefiltered specular, (5) BRDF LUT
 
         const Shader shadowVertexShader(
             m_device->Get(),
@@ -101,6 +105,26 @@ namespace Engine {
             m_device->Get(),
             m_window->GetNativeWindow());
 
+        // Composite.frag.msl does its own ACES tonemap and pow(1/2.2) gamma
+        // encode, on the assumption that writing to the swapchain applies
+        // no further color conversion. An _SRGB swapchain format would have
+        // the hardware apply a second (linear -> sRGB) encode on top of
+        // that write, double-gamma-correcting the whole image. This engine
+        // only ever requests SDL's default SDR composition, which is a
+        // plain UNORM format (BGRA8Unorm on Metal) — this check exists so a
+        // future change to SDL_SetGPUSwapchainParameters requesting an SDR_
+        // LINEAR or HDR composition fails loudly here instead of silently
+        // washing out every frame.
+        if (colorFormat == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB ||
+            colorFormat == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB) {
+            throw std::runtime_error(
+                "Swapchain format is an _SRGB format, but Composite.frag.msl "
+                "already applies its own gamma encode — this would double-"
+                "gamma-correct every frame. Either switch the swapchain "
+                "composition back to SDR (UNORM, no automatic sRGB encode) "
+                "or remove the manual pow(1.0 / 2.2) in Composite.frag.msl.");
+        }
+
         int windowWidth = 0;
         int windowHeight = 0;
         SDL_GetWindowSizeInPixels(
@@ -108,8 +132,13 @@ namespace Engine {
 
         CreateDepthTexture(static_cast<Uint32>(windowWidth), static_cast<Uint32>(windowHeight));
 
+        // kHdrFormat, not colorFormat/swapchain format: MainPass renders
+        // into m_hdrTexture now, and the pipeline's own color target format
+        // must exactly match whatever texture it's actually bound to at
+        // draw time, or the result is undefined (in practice: severe visual
+        // corruption, not a validation error).
         m_pipeline = std::make_unique<Pipeline>(
-            m_device->Get(), colorFormat, kDepthFormat, vertexShader, fragmentShader);
+            m_device->Get(), kHdrFormat, kDepthFormat, vertexShader, fragmentShader);
 
         m_sampler = std::make_unique<Sampler>(
             m_device->Get(),
@@ -119,6 +148,53 @@ namespace Engine {
         m_shadowMap = std::make_unique<ShadowMap>(m_device->Get(), kShadowMapSize);
         m_shadowPipeline = std::make_unique<Pipeline>(
             m_device->Get(), ShadowMap::kFormat, shadowVertexShader, shadowFragmentShader);
+
+        m_environmentMap = std::make_unique<EnvironmentMap>(
+            m_device->Get(), "Assets/Textures/Environment/environment.hdr");
+
+        const Shader skyboxVertexShader(
+            m_device->Get(), "Assets/Shaders/Compiled/Cube.vert.msl",
+            SDL_GPU_SHADERSTAGE_VERTEX, 1);
+        const Shader skyboxFragmentShader(
+            m_device->Get(), "Assets/Shaders/Compiled/Skybox.frag.msl",
+            SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
+
+        // Same reason as m_pipeline above: SkyboxPass also draws into
+        // m_hdrTexture, not the swapchain.
+        m_skyboxPipeline = std::make_unique<Pipeline>(
+            m_device->Get(), kHdrFormat, kDepthFormat, skyboxVertexShader, skyboxFragmentShader,
+            Pipeline::VertexLayout::PositionOnly, SDL_GPU_COMPAREOP_LESS_OR_EQUAL,
+            /* enableDepthWrite */ false);
+
+        CreateHdrTargets(static_cast<Uint32>(windowWidth), static_cast<Uint32>(windowHeight));
+
+        m_postProcessSampler = std::make_unique<Sampler>(
+            m_device->Get(), SDL_GPU_FILTER_LINEAR, SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE);
+
+        const Shader fullscreenVertexShader(
+            m_device->Get(), "Assets/Shaders/Compiled/Fullscreen.vert.msl",
+            SDL_GPU_SHADERSTAGE_VERTEX, 0);
+
+        const Shader brightExtractFragmentShader(
+            m_device->Get(), "Assets/Shaders/Compiled/BrightExtract.frag.msl",
+            SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+        m_brightExtractPipeline = std::make_unique<Pipeline>(
+            m_device->Get(), kHdrFormat, std::nullopt, fullscreenVertexShader, brightExtractFragmentShader,
+            Pipeline::VertexLayout::None);
+
+        const Shader blurFragmentShader(
+            m_device->Get(), "Assets/Shaders/Compiled/GaussianBlur.frag.msl",
+            SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+        m_blurPipeline = std::make_unique<Pipeline>(
+            m_device->Get(), kHdrFormat, std::nullopt, fullscreenVertexShader, blurFragmentShader,
+            Pipeline::VertexLayout::None);
+
+        const Shader compositeFragmentShader(
+            m_device->Get(), "Assets/Shaders/Compiled/Composite.frag.msl",
+            SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 2);
+        m_compositePipeline = std::make_unique<Pipeline>(
+            m_device->Get(), colorFormat, std::nullopt, fullscreenVertexShader, compositeFragmentShader,
+            Pipeline::VertexLayout::None);
 
         m_debugUI = std::make_unique<DebugUI>(*m_window, m_device->Get(), colorFormat);
     }
@@ -200,6 +276,7 @@ namespace Engine {
 
         ShadowPass(scene, lightSpaceMatrix);
         MainPass(scene, lightSpaceMatrix);
+        PostProcessPass();
         UIPass(scene, mode);
     }
 
@@ -229,7 +306,7 @@ namespace Engine {
 
     void Renderer::MainPass(Scene &scene, const glm::mat4 &lightSpaceMatrix) {
         SDL_GPUColorTargetInfo colorTarget{};
-        colorTarget.texture = m_swapchainTexture;
+        colorTarget.texture = m_hdrTexture.Get(); // PostProcessPass reads this back, not the swapchain directly
 
         colorTarget.clear_color = {
             0.0f,
@@ -292,7 +369,8 @@ namespace Engine {
             glm::vec4 SunDirection;
             glm::vec4 SunColor;
             glm::vec4 ViewPosition;
-            glm::vec4 SunParams; // x: ambient, y: point light count, z: spot light count, w: unused
+            glm::vec4 SunParams; // x: ambient (only used when IBLParams.w disables IBL), y: point light count, z: spot light count, w: unused
+            glm::vec4 IBLParams; // x: min ambient roughness, y: max reflection LOD, z: ambient intensity, w: IBL enabled (0/1)
             glm::mat4 LightSpaceMatrix;
             PointLightData PointLights[kMaxPointLights];
             SpotLightData SpotLights[kMaxSpotLights];
@@ -302,6 +380,9 @@ namespace Engine {
         lightUniform.SunDirection = glm::vec4(light.Direction, 0.0f);
         lightUniform.SunColor = glm::vec4(light.Color, 0.0f);
         lightUniform.ViewPosition = glm::vec4(camera.GetPosition(), 0.0f);
+        lightUniform.IBLParams = glm::vec4(
+            m_iblSettings.MinAmbientRoughness, m_iblSettings.MaxReflectionLod,
+            m_iblSettings.AmbientIntensity, m_iblSettings.Enabled ? 1.0f : 0.0f);
         lightUniform.LightSpaceMatrix = lightSpaceMatrix;
 
         int pointLightCount = 0;
@@ -344,14 +425,125 @@ namespace Engine {
         shadowBinding.sampler = m_shadowMap->GetSampler();
         SDL_BindGPUFragmentSamplers(m_renderPass, 2, &shadowBinding, 1);
 
+        SDL_GPUTextureSamplerBinding iblBindings[3]{};
+        iblBindings[0].texture = m_environmentMap->GetIrradianceTexture();
+        iblBindings[0].sampler = m_environmentMap->GetHdrSampler();
+        iblBindings[1].texture = m_environmentMap->GetPrefilteredTexture();
+        iblBindings[1].sampler = m_environmentMap->GetHdrSampler();
+        iblBindings[2].texture = m_environmentMap->GetBRDFLutTexture();
+        iblBindings[2].sampler = m_environmentMap->GetHdrSampler();
+        SDL_BindGPUFragmentSamplers(m_renderPass, 3, iblBindings, 3);
+
         RenderSystem(registry, m_commandBuffer, m_renderPass, viewProjection);
+
+        // Off: the color target's own clear_color above shows through as
+        // the background instead, same as before EnvironmentMap existed.
+        if (m_iblSettings.Enabled)
+            SkyboxPass(view, projection);
 
         SDL_EndGPURenderPass(m_renderPass);
         m_renderPass = nullptr;
     }
 
+    void Renderer::SkyboxPass(const glm::mat4 &view, const glm::mat4 &projection) {
+        // Drop translation (mat3 truncation) so the skybox always appears
+        // centered on the camera regardless of where it's moved.
+        const glm::mat4 skyboxViewProjection = projection * glm::mat4(glm::mat3(view));
+
+        SDL_BindGPUGraphicsPipeline(m_renderPass, m_skyboxPipeline->Get());
+
+        SDL_PushGPUVertexUniformData(m_commandBuffer, 0, &skyboxViewProjection, sizeof(glm::mat4));
+
+        SDL_GPUTextureSamplerBinding skyboxBinding{};
+        skyboxBinding.texture = m_environmentMap->GetSkyboxTexture();
+        skyboxBinding.sampler = m_environmentMap->GetHdrSampler();
+        SDL_BindGPUFragmentSamplers(m_renderPass, 0, &skyboxBinding, 1);
+
+        m_environmentMap->DrawCube(m_renderPass);
+    }
+
+    void Renderer::PostProcessPass() {
+        // --- Bright-pass extraction: HDR scene -> half-res bloomTextureA.
+        {
+            SDL_GPUColorTargetInfo colorTarget{};
+            colorTarget.texture = m_bloomTextureA.Get();
+            colorTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+            colorTarget.store_op = SDL_GPU_STOREOP_STORE;
+
+            SDL_GPURenderPass *renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, nullptr);
+            SDL_BindGPUGraphicsPipeline(renderPass, m_brightExtractPipeline->Get());
+
+            SDL_PushGPUFragmentUniformData(
+                m_commandBuffer, 0, &m_postProcessSettings.BloomThreshold, sizeof(float));
+
+            SDL_GPUTextureSamplerBinding hdrBinding{};
+            hdrBinding.texture = m_hdrTexture.Get();
+            hdrBinding.sampler = m_postProcessSampler->Get();
+            SDL_BindGPUFragmentSamplers(renderPass, 0, &hdrBinding, 1);
+
+            SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
+            SDL_EndGPURenderPass(renderPass);
+        }
+
+        // --- Separable Gaussian blur, ping-ponging between the two
+        // half-res bloom textures. kBloomBlurPasses is even, so the result
+        // always lands back in m_bloomTextureA.
+        for (Uint32 pass = 0; pass < kBloomBlurPasses; ++pass) {
+            const bool horizontal = (pass % 2) == 0;
+            SDL_GPUTexture *source = horizontal ? m_bloomTextureA.Get() : m_bloomTextureB.Get();
+            SDL_GPUTexture *destination = horizontal ? m_bloomTextureB.Get() : m_bloomTextureA.Get();
+
+            SDL_GPUColorTargetInfo colorTarget{};
+            colorTarget.texture = destination;
+            colorTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+            colorTarget.store_op = SDL_GPU_STOREOP_STORE;
+
+            SDL_GPURenderPass *renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, nullptr);
+            SDL_BindGPUGraphicsPipeline(renderPass, m_blurPipeline->Get());
+
+            const glm::vec2 texelOffset = horizontal
+                ? glm::vec2(1.0f / static_cast<float>(m_bloomWidth), 0.0f)
+                : glm::vec2(0.0f, 1.0f / static_cast<float>(m_bloomHeight));
+            SDL_PushGPUFragmentUniformData(m_commandBuffer, 0, &texelOffset, sizeof(texelOffset));
+
+            SDL_GPUTextureSamplerBinding sourceBinding{};
+            sourceBinding.texture = source;
+            sourceBinding.sampler = m_postProcessSampler->Get();
+            SDL_BindGPUFragmentSamplers(renderPass, 0, &sourceBinding, 1);
+
+            SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
+            SDL_EndGPURenderPass(renderPass);
+        }
+
+        // --- Composite: HDR scene + blurred bloom -> tone mapped LDR swapchain.
+        {
+            SDL_GPUColorTargetInfo colorTarget{};
+            colorTarget.texture = m_swapchainTexture;
+            colorTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+            colorTarget.store_op = SDL_GPU_STOREOP_STORE;
+
+            SDL_GPURenderPass *renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, nullptr);
+            SDL_BindGPUGraphicsPipeline(renderPass, m_compositePipeline->Get());
+
+            const glm::vec4 params(
+                m_postProcessSettings.Exposure, m_postProcessSettings.BloomIntensity,
+                m_postProcessSettings.BloomEnabled ? 1.0f : 0.0f, 0.0f);
+            SDL_PushGPUFragmentUniformData(m_commandBuffer, 0, &params, sizeof(params));
+
+            SDL_GPUTextureSamplerBinding bindings[2]{};
+            bindings[0].texture = m_hdrTexture.Get();
+            bindings[0].sampler = m_postProcessSampler->Get();
+            bindings[1].texture = m_bloomTextureA.Get();
+            bindings[1].sampler = m_postProcessSampler->Get();
+            SDL_BindGPUFragmentSamplers(renderPass, 0, bindings, 2);
+
+            SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
+            SDL_EndGPURenderPass(renderPass);
+        }
+    }
+
     void Renderer::UIPass(Scene &scene, AppMode mode) {
-        m_debugUI->Draw(scene.Registry(), mode);
+        m_debugUI->Draw(scene.Registry(), mode, m_iblSettings, m_postProcessSettings);
         m_debugUI->FinalizeDrawData(m_commandBuffer);
 
         SDL_GPUColorTargetInfo uiColorTarget{};
@@ -380,6 +572,7 @@ namespace Engine {
             return;
 
         CreateDepthTexture(static_cast<Uint32>(windowWidth), static_cast<Uint32>(windowHeight));
+        CreateHdrTargets(static_cast<Uint32>(windowWidth), static_cast<Uint32>(windowHeight));
     }
 
     SDL_GPUDevice *Renderer::GetDevice() const {
@@ -411,6 +604,47 @@ namespace Engine {
         if (!m_depthTexture) {
             throw std::runtime_error(
                 std::format("Failed to create depth texture: {}", SDL_GetError()));
+        }
+    }
+
+    void Renderer::CreateHdrTargets(Uint32 width, Uint32 height) {
+        SDL_GPUTextureCreateInfo hdrCreateInfo{};
+        hdrCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+        hdrCreateInfo.format = kHdrFormat;
+        hdrCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+        hdrCreateInfo.width = width;
+        hdrCreateInfo.height = height;
+        hdrCreateInfo.layer_count_or_depth = 1;
+        hdrCreateInfo.num_levels = 1;
+        hdrCreateInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+
+        m_hdrTexture = GPUTextureHandle(m_device->Get(), SDL_CreateGPUTexture(m_device->Get(), &hdrCreateInfo));
+
+        if (!m_hdrTexture) {
+            throw std::runtime_error(std::format("Failed to create HDR texture: {}", SDL_GetError()));
+        }
+
+        // Half resolution: cheaper to blur, and the extra softness from
+        // upscaling back is desirable for bloom specifically — unlike the
+        // depth/HDR targets above, bloom doesn't need to match the window
+        // pixel-for-pixel.
+        m_bloomWidth = std::max<Uint32>(1, width / 2);
+        m_bloomHeight = std::max<Uint32>(1, height / 2);
+
+        SDL_GPUTextureCreateInfo bloomCreateInfo = hdrCreateInfo;
+        bloomCreateInfo.width = m_bloomWidth;
+        bloomCreateInfo.height = m_bloomHeight;
+
+        m_bloomTextureA = GPUTextureHandle(m_device->Get(), SDL_CreateGPUTexture(m_device->Get(), &bloomCreateInfo));
+
+        if (!m_bloomTextureA) {
+            throw std::runtime_error(std::format("Failed to create bloom texture A: {}", SDL_GetError()));
+        }
+
+        m_bloomTextureB = GPUTextureHandle(m_device->Get(), SDL_CreateGPUTexture(m_device->Get(), &bloomCreateInfo));
+
+        if (!m_bloomTextureB) {
+            throw std::runtime_error(std::format("Failed to create bloom texture B: {}", SDL_GetError()));
         }
     }
 }

@@ -5,6 +5,9 @@
 #include <Engine/Renderer/Pipeline.h>
 #include <Engine/Renderer/Shader.h>
 #include <Engine/Renderer/Vertex.h>
+#include <Engine/Renderer/GlmConfig.h>
+
+#include <glm/glm.hpp>
 
 #include <array>
 #include <cstddef>
@@ -15,30 +18,44 @@ namespace Engine {
     namespace {
         struct VertexInputState {
             SDL_GPUVertexBufferDescription bufferDescription{};
+            // Sized for the largest layout (Full: 3 attributes);
+            // PositionOnly only fills index 0, None fills neither.
             std::array<SDL_GPUVertexAttribute, 3> attributes{};
+            Uint32 attributeCount = 0;
+            Uint32 bufferCount = 1;
         };
 
-        VertexInputState MakeVertexInputState() {
+        VertexInputState MakeVertexInputState(Pipeline::VertexLayout layout) {
             VertexInputState state;
+
+            if (layout == Pipeline::VertexLayout::None) {
+                state.bufferCount = 0;
+                return state;
+            }
+
             state.bufferDescription.slot = 0;
-            state.bufferDescription.pitch = sizeof(Vertex);
             state.bufferDescription.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
             state.bufferDescription.instance_step_rate = 0;
 
-            state.attributes[0].location = 0;
-            state.attributes[0].buffer_slot = 0;
-            state.attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-            state.attributes[0].offset = offsetof(Vertex, Position);
+            if (layout == Pipeline::VertexLayout::PositionOnly) {
+                state.bufferDescription.pitch = sizeof(glm::vec3);
 
-            state.attributes[1].location = 1;
-            state.attributes[1].buffer_slot = 0;
-            state.attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-            state.attributes[1].offset = offsetof(Vertex, Normal);
+                state.attributes[0].location = 0;
+                state.attributes[0].buffer_slot = 0;
+                state.attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+                state.attributes[0].offset = 0;
 
-            state.attributes[2].location = 2;
-            state.attributes[2].buffer_slot = 0;
-            state.attributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
-            state.attributes[2].offset = offsetof(Vertex, TexCoord);
+                state.attributeCount = 1;
+                return state;
+            }
+
+            // VertexLayout::Full — unchanged from M13.
+            state.bufferDescription.pitch = sizeof(Vertex);
+
+            state.attributes[0] = {0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(Vertex, Position)};
+            state.attributes[1] = {1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(Vertex, Normal)};
+            state.attributes[2] = {2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(Vertex, TexCoord)};
+            state.attributeCount = 3;
 
             return state;
         }
@@ -46,10 +63,13 @@ namespace Engine {
 
     Pipeline::Pipeline(SDL_GPUDevice *device,
                         SDL_GPUTextureFormat colorFormat,
-                        SDL_GPUTextureFormat depthFormat,
+                        std::optional<SDL_GPUTextureFormat> depthFormat,
                         const Shader &vertexShader,
-                        const Shader &fragmentShader) {
-        VertexInputState vertexInputState = MakeVertexInputState();
+                        const Shader &fragmentShader,
+                        VertexLayout vertexLayout,
+                        SDL_GPUCompareOp depthCompareOp,
+                        bool enableDepthWrite) {
+        VertexInputState vertexInputState = MakeVertexInputState(vertexLayout);
 
         SDL_GPUColorTargetDescription colorTargetDescription{};
         colorTargetDescription.format = colorFormat;
@@ -61,34 +81,36 @@ namespace Engine {
 
         pipelineCreateInfo.vertex_input_state.vertex_buffer_descriptions =
                 &vertexInputState.bufferDescription;
-        pipelineCreateInfo.vertex_input_state.num_vertex_buffers = 1;
+        pipelineCreateInfo.vertex_input_state.num_vertex_buffers = vertexInputState.bufferCount;
         pipelineCreateInfo.vertex_input_state.vertex_attributes = vertexInputState.attributes.data();
-        pipelineCreateInfo.vertex_input_state.num_vertex_attributes =
-                static_cast<Uint32>(vertexInputState.attributes.size());
+        pipelineCreateInfo.vertex_input_state.num_vertex_attributes = vertexInputState.attributeCount;
 
-        pipelineCreateInfo.target_info.color_target_descriptions =
-                &colorTargetDescription;
+        pipelineCreateInfo.target_info.color_target_descriptions = &colorTargetDescription;
         pipelineCreateInfo.target_info.num_color_targets = 1;
-        pipelineCreateInfo.target_info.depth_stencil_format = depthFormat;
-        pipelineCreateInfo.target_info.has_depth_stencil_target = true;
 
-        pipelineCreateInfo.depth_stencil_state.enable_depth_test = true;
-        pipelineCreateInfo.depth_stencil_state.enable_depth_write = true;
-        pipelineCreateInfo.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
+        if (depthFormat) {
+            pipelineCreateInfo.target_info.depth_stencil_format = *depthFormat;
+            pipelineCreateInfo.target_info.has_depth_stencil_target = true;
 
-        // glTF vertices are wound CCW when viewed from the front, in its
-        // own right-handed convention (the spec's own front-face rule).
-        // GLM_FORCE_LEFT_HANDED (see GlmConfig.h) makes the view matrix a
-        // genuinely left-handed frame — lookAt's (right, up, forward) obey
-        // right = cross(up, forward) instead of cross(forward, up) — which
-        // flips the parity a same-vertex-order right-handed pipeline would
-        // produce. The projection step doesn't introduce a further flip
-        // (X/Y keep their sign into clip space), so a front-facing,
-        // CCW-authored triangle ends up CLOCKWISE on screen here. If models
-        // vanish or render inside-out after this change, that reasoning is
-        // wrong for this asset set — flip this one enum to COUNTER_CLOCKWISE.
-        pipelineCreateInfo.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
-        pipelineCreateInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
+            pipelineCreateInfo.depth_stencil_state.enable_depth_test = true;
+            pipelineCreateInfo.depth_stencil_state.enable_depth_write = enableDepthWrite;
+            pipelineCreateInfo.depth_stencil_state.compare_op = depthCompareOp;
+        }
+
+        // The cube (skybox/precompute) is always drawn from inside, facing
+        // outward — every triangle would be back-face culled from the
+        // camera's point of view under the Full layout's CW convention (see
+        // that branch below), so culling is simply off for these instead of
+        // reasoning about a second winding order for one shape.
+        if (vertexLayout == VertexLayout::Full) {
+            // See M13/M12: CCW-authored glTF vertices end up CLOCKWISE on
+            // screen through this engine's left-handed view/projection
+            // convention (GlmConfig.h).
+            pipelineCreateInfo.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
+            pipelineCreateInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
+        } else {
+            pipelineCreateInfo.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        }
 
         SDL_GPUGraphicsPipeline *pipeline =
                 SDL_CreateGPUGraphicsPipeline(device, &pipelineCreateInfo);
@@ -105,7 +127,10 @@ namespace Engine {
                         SDL_GPUTextureFormat depthFormat,
                         const Shader &vertexShader,
                         const Shader &fragmentShader) {
-        VertexInputState vertexInputState = MakeVertexInputState();
+        // Depth-only shadow pipeline, always the Full vertex layout (the
+        // shadow vertex shader ignores Normal/TexCoord but still reads the
+        // same buffer as the main pass).
+        VertexInputState vertexInputState = MakeVertexInputState(VertexLayout::Full);
 
         SDL_GPUGraphicsPipelineCreateInfo pipelineCreateInfo{};
         pipelineCreateInfo.vertex_shader = vertexShader.Get();
@@ -114,10 +139,9 @@ namespace Engine {
 
         pipelineCreateInfo.vertex_input_state.vertex_buffer_descriptions =
                 &vertexInputState.bufferDescription;
-        pipelineCreateInfo.vertex_input_state.num_vertex_buffers = 1;
+        pipelineCreateInfo.vertex_input_state.num_vertex_buffers = vertexInputState.bufferCount;
         pipelineCreateInfo.vertex_input_state.vertex_attributes = vertexInputState.attributes.data();
-        pipelineCreateInfo.vertex_input_state.num_vertex_attributes =
-                static_cast<Uint32>(vertexInputState.attributes.size());
+        pipelineCreateInfo.vertex_input_state.num_vertex_attributes = vertexInputState.attributeCount;
 
         // No color target: this pipeline only ever writes to a depth
         // texture, matching SDL_gpu's depth-only render pass support

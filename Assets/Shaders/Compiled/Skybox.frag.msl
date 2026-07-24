@@ -1,0 +1,18 @@
+#include <metal_stdlib>
+using namespace metal;
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float3 WorldDirection;
+};
+
+fragment float4 main0(VSOutput in [[stage_in]],
+                       texturecube<float> environmentMap [[texture(0)]],
+                       sampler environmentSampler [[sampler(0)]])
+{
+    // Written straight into an HDR render target — stays linear and
+    // unclamped (an HDRI's sun disk is often far above 1.0) for
+    // Composite.frag.msl's tone mapping and bloom to handle centrally.
+    return float4(environmentMap.sample(environmentSampler, normalize(in.WorldDirection)).rgb, 1.0);
+}

@@ -1,0 +1,34 @@
+#include <metal_stdlib>
+using namespace metal;
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float2 TexCoord;
+};
+
+vertex VSOutput main0(uint vertexId [[vertex_id]])
+{
+    // Fullscreen-triangle trick: 3 vertices (2 of them off-screen) cover
+    // the whole viewport without a vertex/index buffer — shared by every
+    // full-screen fragment pass in the engine (BRDF LUT precompute, bright-
+    // pass extraction, Gaussian blur, tone-mapping composite). TexCoord's
+    // exact meaning is up to whichever fragment shader reads it (a texture-
+    // space UV for most passes, (NdotV, roughness) for the BRDF LUT) — this
+    // shader only guarantees it sweeps [0, 1] x [0, 1] across the target.
+    float2 positions[3] = { float2(-1.0, -1.0), float2(3.0, -1.0), float2(-1.0, 3.0) };
+    // V is inverted relative to Position's own Y: clip-space Y grows
+    // upward, but Metal texture space has V=0 at the top and grows
+    // downward (the same fact Mesh.frag.msl's ShadowFactor relies on when
+    // converting NDC to a shadow-map UV) — a screen-bottom vertex
+    // (Position.y = -1) must land at V = 1, not V = 0, or every pass that
+    // samples an actual image through this shader (as opposed to the BRDF
+    // LUT, which only ever reads TexCoord as two independent scalars)
+    // comes out vertically flipped.
+    float2 uvs[3] = { float2(0.0, 1.0), float2(2.0, 1.0), float2(0.0, -1.0) };
+
+    VSOutput out;
+    out.Position = float4(positions[vertexId], 0.0, 1.0);
+    out.TexCoord = uvs[vertexId];
+    return out;
+}

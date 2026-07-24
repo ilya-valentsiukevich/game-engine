@@ -6,6 +6,8 @@
 #include <Engine/Core/AppMode.h>
 #include <Engine/Renderer/GlmConfig.h>
 #include <Engine/Renderer/GPUResource.h>
+#include <Engine/Renderer/IBLSettings.h>
+#include <Engine/Renderer/PostProcessSettings.h>
 
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
@@ -17,6 +19,7 @@ namespace Engine {
     class Pipeline;
     class Sampler;
     class ShadowMap;
+    class EnvironmentMap;
     class DebugUI;
     class Scene;
     struct DirectionalLight;
@@ -40,10 +43,10 @@ namespace Engine {
 
         void ProcessDebugUIEvent(const SDL_Event &event);
 
-        // Recreates every render target sized to the window (currently:
-        // the depth texture) after SDL reports the window's pixel size
-        // changed. Safe to call between frames only — never while a render
-        // pass referencing the old target is still open.
+        // Recreates every render target sized to the window (depth, HDR
+        // scene, bloom) after SDL reports the window's pixel size changed.
+        // Safe to call between frames only — never while a render pass
+        // referencing the old target is still open.
         void OnWindowResized();
 
         // Non-owning access to the GPU device and default sampler backing
@@ -55,9 +58,14 @@ namespace Engine {
 
     private:
         static constexpr SDL_GPUTextureFormat kDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+        static constexpr SDL_GPUTextureFormat kHdrFormat = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
         static constexpr Uint32 kShadowMapSize = 2048;
+        // Even, so the ping-ponged blur result always ends up back in
+        // m_bloomTextureA — see PostProcessPass.
+        static constexpr Uint32 kBloomBlurPasses = 4;
 
         void CreateDepthTexture(Uint32 width, Uint32 height);
+        void CreateHdrTargets(Uint32 width, Uint32 height);
 
         // Render() split into named phases: ShadowPass renders the scene's
         // depth from the light's point of view first, then MainPass draws
@@ -78,6 +86,18 @@ namespace Engine {
         // top of whatever MainPass already put there).
         void UIPass(Scene &scene, AppMode mode);
 
+        // Draws the environment cubemap as the scene's background, after
+        // MainPass's opaque geometry — the vertex shader pins every skybox
+        // fragment to the far plane, and the pipeline's depth compare op is
+        // LESS_OR_EQUAL with writes disabled, so this only ever paints
+        // pixels nothing else already covered this frame.
+        void SkyboxPass(const glm::mat4 &view, const glm::mat4 &projection);
+
+        // Reads the HDR scene MainPass just rendered, extracts a blurred
+        // bright-pass (bloom), and composites both — tone mapped down to
+        // LDR — into the swapchain. Runs after MainPass, before UIPass.
+        void PostProcessPass();
+
         Window *m_window = nullptr;
 
         // Declaration order matters: members below are destroyed before
@@ -86,6 +106,11 @@ namespace Engine {
         std::unique_ptr<GPUDevice> m_device;
 
         GPUTextureHandle m_depthTexture;
+        GPUTextureHandle m_hdrTexture;
+        GPUTextureHandle m_bloomTextureA;
+        GPUTextureHandle m_bloomTextureB;
+        Uint32 m_bloomWidth = 0;
+        Uint32 m_bloomHeight = 0;
 
         SDL_GPUCommandBuffer *m_commandBuffer = nullptr;
         SDL_GPUTexture *m_swapchainTexture = nullptr;
@@ -93,8 +118,16 @@ namespace Engine {
 
         std::unique_ptr<Pipeline> m_pipeline;
         std::unique_ptr<Sampler> m_sampler;
+        std::unique_ptr<Sampler> m_postProcessSampler;
         std::unique_ptr<ShadowMap> m_shadowMap;
         std::unique_ptr<Pipeline> m_shadowPipeline;
+        std::unique_ptr<EnvironmentMap> m_environmentMap;
+        std::unique_ptr<Pipeline> m_skyboxPipeline;
+        IBLSettings m_iblSettings;
+        std::unique_ptr<Pipeline> m_brightExtractPipeline;
+        std::unique_ptr<Pipeline> m_blurPipeline;
+        std::unique_ptr<Pipeline> m_compositePipeline;
+        PostProcessSettings m_postProcessSettings;
         std::unique_ptr<DebugUI> m_debugUI;
     };
 }

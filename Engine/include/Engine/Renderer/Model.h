@@ -5,6 +5,7 @@
 
 #include <Engine/Renderer/GPUResource.h>
 
+#include <cstddef>
 #include <filesystem>
 #include <memory>
 #include <vector>
@@ -34,6 +35,12 @@ namespace Engine {
         // binding — for depth-only passes, where the bound pipeline has no
         // fragment-stage resources to bind them to anyway.
         void DrawDepthOnly(SDL_GPURenderPass *renderPass) const;
+
+        // For DebugUI's material inspector, which shows one editable block
+        // per part — a model can have several (e.g. body + separate cape
+        // material), each with its own Material to edit independently.
+        std::size_t GetPartCount() const { return m_parts.size(); }
+        Material &GetMaterial(std::size_t index) const { return *m_parts[index].material; }
 
     private:
         // ~Model() must be defined in Model.cpp (not defaulted here): it

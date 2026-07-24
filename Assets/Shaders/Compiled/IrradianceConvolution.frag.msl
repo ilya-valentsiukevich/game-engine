@@ -1,0 +1,47 @@
+#include <metal_stdlib>
+using namespace metal;
+
+constant float kPi = 3.14159265359;
+constant float kSampleDelta = 0.025;
+
+struct VSOutput
+{
+    float4 Position [[position]];
+    float3 WorldDirection;
+};
+
+fragment float4 main0(VSOutput in [[stage_in]],
+                       texturecube<float> environmentMap [[texture(0)]],
+                       sampler environmentSampler [[sampler(0)]])
+{
+    float3 n = normalize(in.WorldDirection);
+
+    float3 up = float3(0.0, 1.0, 0.0);
+    float3 right = normalize(cross(up, n));
+    up = normalize(cross(n, right));
+
+    float3 irradiance = float3(0.0);
+    uint sampleCount = 0u;
+
+    for (float phi = 0.0; phi < 2.0 * kPi; phi += kSampleDelta)
+    {
+        for (float theta = 0.0; theta < 0.5 * kPi; theta += kSampleDelta)
+        {
+            // Tangent-space hemisphere sample, rotated into world space via
+            // the right/up/N basis built above.
+            float3 tangentSample = float3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
+            float3 sampleVector = tangentSample.x * right + tangentSample.y * up + tangentSample.z * n;
+
+            // cos(theta): Lambert's law. sin(theta): corrects for the
+            // shrinking solid angle of each (phi, theta) cell near the
+            // pole. Both are part of the irradiance integral itself, not
+            // an ad hoc weight.
+            irradiance += environmentMap.sample(environmentSampler, sampleVector).rgb * cos(theta) * sin(theta);
+            ++sampleCount;
+        }
+    }
+
+    irradiance = kPi * irradiance / float(sampleCount);
+
+    return float4(irradiance, 1.0);
+}
